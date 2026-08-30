@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/fullstorydev/grpcurl"
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/dynamic"
+	"github.com/jhump/protoreflect/desc"    //nolint:staticcheck // grpcurl's public DescriptorSource API still uses jhump v1 descriptors.
+	"github.com/jhump/protoreflect/dynamic" //nolint:staticcheck // grpcurl's request parser requires its dynamic v1 message.
 	"github.com/jhump/protoreflect/grpcreflect"
 	"github.com/lihongjie0209/scheduler-service/internal/outbound"
 	"google.golang.org/grpc"
@@ -74,7 +74,7 @@ func (i *DynamicInvoker) Invoke(ctx context.Context, upstream, fullMethod, reque
 		return "", fmt.Errorf("create dynamic request codec: %w", err)
 	}
 	var output bytes.Buffer
-	handler := grpcurl.NewDefaultEventHandler(&output, source, formatter, false)
+	handler := &grpcurl.DefaultEventHandler{Out: &output, Formatter: formatter}
 	if err := grpcurl.InvokeRPC(ctx, source, connection, strings.TrimPrefix(fullMethod, "/"), nil, handler, parser.Next); err != nil {
 		return "", fmt.Errorf("invoke dynamic gRPC method %q: %w", fullMethod, err)
 	}
