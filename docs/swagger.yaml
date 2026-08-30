@@ -1,0 +1,554 @@
+basePath: /
+definitions:
+  buildinfo.Info:
+    properties:
+      build_time:
+        type: string
+      commit:
+        type: string
+      started_at:
+        type: string
+      uptime:
+        type: string
+      version:
+        type: string
+    type: object
+  health.Dependency:
+    properties:
+      latency:
+        type: string
+      status:
+        type: string
+    type: object
+  health.Status:
+    properties:
+      dependencies:
+        additionalProperties:
+          $ref: '#/definitions/health.Dependency'
+        type: object
+      status:
+        type: string
+    type: object
+  httptransport.CreateJobRequest:
+    properties:
+      cron_expression:
+        type: string
+      enabled:
+        type: boolean
+      full_method:
+        type: string
+      name:
+        type: string
+      request_json:
+        type: string
+      timeout_milliseconds:
+        type: integer
+      timezone:
+        type: string
+      upstream:
+        type: string
+    required:
+    - cron_expression
+    - full_method
+    - name
+    - timeout_milliseconds
+    - upstream
+    type: object
+  httptransport.DeleteJobRequest:
+    properties:
+      id:
+        type: string
+      version:
+        type: integer
+    required:
+    - id
+    - version
+    type: object
+  httptransport.ExecutionPage:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/job.Execution'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  httptransport.JobIDRequest:
+    properties:
+      id:
+        type: string
+    required:
+    - id
+    type: object
+  httptransport.JobPage:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/job.Job'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  httptransport.ListExecutionsRequest:
+    properties:
+      job_id:
+        type: string
+      page:
+        type: integer
+      page_size:
+        type: integer
+    required:
+    - job_id
+    type: object
+  httptransport.ListJobsRequest:
+    properties:
+      page:
+        type: integer
+      page_size:
+        type: integer
+      status:
+        type: string
+    type: object
+  httptransport.MeResponseBody:
+    properties:
+      subject:
+        type: string
+    type: object
+  httptransport.Response:
+    properties:
+      body: {}
+      code:
+        type: integer
+      message:
+        type: string
+      request_id:
+        type: string
+    type: object
+  httptransport.UpdateJobRequest:
+    properties:
+      cron_expression:
+        type: string
+      enabled:
+        type: boolean
+      full_method:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      request_json:
+        type: string
+      timeout_milliseconds:
+        type: integer
+      timezone:
+        type: string
+      upstream:
+        type: string
+      version:
+        type: integer
+    required:
+    - cron_expression
+    - full_method
+    - id
+    - name
+    - timeout_milliseconds
+    - upstream
+    - version
+    type: object
+  job.Execution:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      duration_milliseconds:
+        type: integer
+      error_code:
+        type: string
+      error_message:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      job_id:
+        type: string
+      response_json:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      trigger_type:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      version:
+        type: integer
+    type: object
+  job.Job:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      cron_expression:
+        type: string
+      full_method:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      request_json:
+        type: string
+      status:
+        type: string
+      timeout_milliseconds:
+        type: integer
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      upstream:
+        type: string
+      version:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: 'Production-oriented Go Web API scaffold. Application error codes:
+    0 success; 10000-19999 common/input; 20000-29999 authentication/authorization;
+    30000-39999 business; 50000-59999 infrastructure.'
+  title: Go API Template
+  version: "1.0"
+paths:
+  /api/v1/me:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/httptransport.MeResponseBody'
+              type: object
+        "401":
+          description: 'Code 20001: unauthorized'
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+      security:
+      - Bearer: []
+      summary: Return the authenticated subject
+      tags:
+      - authentication
+  /api/v1/scheduler/executions/get:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Execution ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.JobIDRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/job.Execution'
+              type: object
+      security:
+      - Bearer: []
+      summary: Get a job execution
+      tags:
+      - scheduler
+  /api/v1/scheduler/executions/list:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Job ID and pagination
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ListExecutionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/httptransport.ExecutionPage'
+              type: object
+      security:
+      - Bearer: []
+      summary: List executions for a job
+      tags:
+      - scheduler
+  /api/v1/scheduler/jobs/create:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Job
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.CreateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/job.Job'
+              type: object
+      security:
+      - Bearer: []
+      summary: Create a dynamic unary gRPC scheduled job
+      tags:
+      - scheduler
+  /api/v1/scheduler/jobs/delete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Job ID and expected version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.DeleteJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+      security:
+      - Bearer: []
+      summary: Soft-delete a scheduled job with optimistic locking
+      tags:
+      - scheduler
+  /api/v1/scheduler/jobs/get:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Job ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.JobIDRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/job.Job'
+              type: object
+      security:
+      - Bearer: []
+      summary: Get a scheduled job
+      tags:
+      - scheduler
+  /api/v1/scheduler/jobs/list:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Filter and pagination
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ListJobsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/httptransport.JobPage'
+              type: object
+      security:
+      - Bearer: []
+      summary: List scheduled jobs
+      tags:
+      - scheduler
+  /api/v1/scheduler/jobs/trigger:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Job ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.JobIDRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/job.Execution'
+              type: object
+      security:
+      - Bearer: []
+      summary: Trigger a job immediately
+      tags:
+      - scheduler
+  /api/v1/scheduler/jobs/update:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Job and expected version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.UpdateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/job.Job'
+              type: object
+      security:
+      - Bearer: []
+      summary: Update a scheduled job with optimistic locking
+      tags:
+      - scheduler
+  /api/v1/version:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/buildinfo.Info'
+              type: object
+      summary: Return build and runtime version information
+      tags:
+      - operations
+  /live:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/health.Status'
+              type: object
+      summary: Check process liveness
+      tags:
+      - operations
+  /ready:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/health.Status'
+              type: object
+        "503":
+          description: 'Code 50003: dependency unavailable'
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/health.Status'
+              type: object
+      summary: Check database and Redis readiness
+      tags:
+      - operations
+schemes:
+- http
+- https
+securityDefinitions:
+  Bearer:
+    description: Enter "Bearer {JWT}".
+    in: header
+    name: Authorization
+    type: apiKey
+  PSK:
+    description: Enter "PSK {shared-key}" for routes configured with PSK authentication.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

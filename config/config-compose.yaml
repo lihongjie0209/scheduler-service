@@ -1,0 +1,28 @@
+app:
+  env: compose
+log:
+  level: debug
+  file: /app/logs/app.log
+swagger:
+  enabled: true
+database:
+  name: platform
+  schema: scheduler
+grpc:
+  reflection_enabled: true
+cron:
+  enabled: true
+outbound:
+  grpc:
+    audit:
+      target: audit-service:9090
+      timeout: 5s
+      retry:
+        max_attempts: 1
+        initial_backoff: 100ms
+        max_backoff: 1s
+        methods: []
+      breaker:
+        enabled: true
+        failure_threshold: 5
+        open_timeout: 30s
