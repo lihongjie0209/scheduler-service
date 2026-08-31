@@ -8,11 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
 	"github.com/lihongjie0209/scheduler-service/internal/cache"
 	"github.com/lihongjie0209/scheduler-service/internal/database"
 	"github.com/lihongjie0209/scheduler-service/internal/idempotency"
-	"github.com/lihongjie0209/scheduler-service/internal/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/requestid"
 	"github.com/robfig/cron/v3"
 	"google.golang.org/grpc/status"
@@ -217,10 +217,10 @@ func normalizeAndValidate(ctx context.Context, invoker Invoker, input Input) (In
 }
 func actorFromContext(ctx context.Context) (string, error) {
 	value, ok := principal.FromContext(ctx)
-	if !ok || value.Subject == "" {
+	if !ok || value.ID == "" {
 		return "", apperror.Unauthorized("authenticated actor is required")
 	}
-	return value.Subject, nil
+	return value.ID, nil
 }
 func statusFromEnabled(enabled bool) string {
 	if enabled {

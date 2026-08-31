@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lihongjie0209/microservice-platform-go/principal"
 	schedulerv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/scheduler/v1"
 	"github.com/lihongjie0209/scheduler-service/internal/auth"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
@@ -19,7 +20,6 @@ import (
 	"github.com/lihongjie0209/scheduler-service/internal/idempotency"
 	"github.com/lihongjie0209/scheduler-service/internal/job"
 	"github.com/lihongjie0209/scheduler-service/internal/observability"
-	"github.com/lihongjie0209/scheduler-service/internal/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/requestid"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -156,7 +156,7 @@ func authenticateGRPC(ctx context.Context, method string, service *auth.Service,
 		if len(values) == 0 || !auth.VerifyPSK(values[0], cfg.PSK.Key) {
 			return nil, status.Error(codes.Unauthenticated, "missing or invalid PSK")
 		}
-		return principal.WithContext(ctx, principal.Principal{Subject: "psk", Method: principal.AuthenticationPSK}), nil
+		return principal.SystemContext(ctx, "psk"), nil
 	}
 	if auth.MatchesAny(method, cfg.SkipGRPCMethods) {
 		return ctx, nil

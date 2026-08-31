@@ -11,8 +11,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lihongjie0209/microservice-platform-go/authn"
+	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
-	"github.com/lihongjie0209/scheduler-service/internal/principal"
 	"go.uber.org/fx"
 )
 
@@ -41,17 +41,17 @@ func NewRuntime(lifecycle fx.Lifecycle, cfg config.Config) (*Service, error) {
 }
 func (s *Service) Verify(ctx context.Context, raw string) (principal.Principal, error) {
 	if s.verifier != nil {
-		value, err := s.verifier.VerifyBearer(ctx, raw)
+		identity, err := s.verifier.VerifyBearer(ctx, raw)
 		if err != nil {
 			return principal.Principal{}, err
 		}
-		return principal.Principal{Subject: value.ID, Method: principal.AuthenticationJWT}, nil
+		return identity, nil
 	}
 	claims, err := s.Parse(raw)
 	if err != nil {
 		return principal.Principal{}, err
 	}
-	return principal.Principal{Subject: claims.Subject, Method: principal.AuthenticationJWT}, nil
+	return principal.Principal{ID: claims.Subject, Type: principal.TypeServiceAccount}, nil
 }
 
 func New(cfg config.Config) *Service {
