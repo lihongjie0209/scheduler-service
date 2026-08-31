@@ -22,3 +22,4 @@ CREATE TABLE job_executions (
     CONSTRAINT job_executions_status_check CHECK (status IN ('running', 'succeeded', 'failed'))
 );
 CREATE INDEX job_executions_job_started_idx ON job_executions (job_id, started_at DESC);
+CREATE INDEX job_executions_retention_idx ON job_executions (status, finished_at, id);

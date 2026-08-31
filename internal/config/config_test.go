@@ -21,6 +21,26 @@ func TestLoad_EnvironmentOverridesFile(t *testing.T) {
 	if cfg.HTTP.Address != "127.0.0.1:9090" {
 		t.Fatalf("HTTP.Address = %q, want %q", cfg.HTTP.Address, "127.0.0.1:9090")
 	}
+	if cfg.Cron.ExecutionRetention != 90*24*time.Hour || cfg.Cron.ExecutionCleanupInterval != time.Hour || cfg.Cron.ExecutionCleanupBatchSize != 500 {
+		t.Fatalf("unexpected execution retention defaults: %+v", cfg.Cron)
+	}
+}
+
+func TestLoad_ExecutionRetentionEnvironmentOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("http:\n  address: 127.0.0.1:8080\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APP_CRON_EXECUTION_RETENTION", "4320h")
+	t.Setenv("APP_CRON_EXECUTION_CLEANUP_BATCH_SIZE", "250")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Cron.ExecutionRetention != 180*24*time.Hour || cfg.Cron.ExecutionCleanupBatchSize != 250 {
+		t.Fatalf("unexpected execution retention overrides: %+v", cfg.Cron)
+	}
 }
 
 func TestConfig_ValidateJWTSecret(t *testing.T) {

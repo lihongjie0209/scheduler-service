@@ -160,9 +160,12 @@ type PSK struct {
 	GRPCMethods []string `mapstructure:"grpc_methods"`
 }
 type Cron struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	Timezone   string `mapstructure:"timezone"`
-	SampleSpec string `mapstructure:"sample_spec"`
+	Enabled                   bool          `mapstructure:"enabled"`
+	Timezone                  string        `mapstructure:"timezone"`
+	SampleSpec                string        `mapstructure:"sample_spec"`
+	ExecutionRetention        time.Duration `mapstructure:"execution_retention"`
+	ExecutionCleanupInterval  time.Duration `mapstructure:"execution_cleanup_interval"`
+	ExecutionCleanupBatchSize int           `mapstructure:"execution_cleanup_batch_size"`
 }
 type Migration struct {
 	AutoUp       bool   `mapstructure:"auto_up"`
@@ -384,6 +387,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cron.enabled", true)
 	v.SetDefault("cron.timezone", "Asia/Shanghai")
 	v.SetDefault("cron.sample_spec", "0 */5 * * * *")
+	v.SetDefault("cron.execution_retention", "2160h")
+	v.SetDefault("cron.execution_cleanup_interval", "1h")
+	v.SetDefault("cron.execution_cleanup_batch_size", 500)
 	v.SetDefault("migration.path", "migrations/postgres")
 	v.SetDefault("migration.database_url", "")
 	v.SetDefault("migration.auto_up", false)
@@ -520,6 +526,9 @@ func (c Config) Validate() error {
 	}
 	if c.EventBus.Enabled && (len(c.EventBus.URLs) == 0 || c.EventBus.StreamName == "" || len(c.EventBus.Subjects) == 0 || (c.EventBus.Storage != "file" && c.EventBus.Storage != "memory") || c.EventBus.MaxAge <= 0 || c.EventBus.DuplicateWindow <= 0 || c.EventBus.ConnectTimeout <= 0 || c.EventBus.ReconnectWait <= 0 || c.EventBus.PublishTimeout <= 0 || c.EventBus.ConsumerAckWait <= 0 || c.EventBus.ConsumerMaxDeliver <= 0) {
 		return errors.New("enabled event_bus requires URLs, stream, subjects, valid storage, positive timeouts, and max deliveries")
+	}
+	if c.Cron.ExecutionRetention <= 0 || c.Cron.ExecutionCleanupInterval <= 0 || c.Cron.ExecutionCleanupBatchSize <= 0 {
+		return errors.New("cron execution retention values must be positive")
 	}
 	for name, upstream := range c.Outbound.HTTP {
 		if upstream.BaseURL == "" || upstream.Timeout <= 0 {

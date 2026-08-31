@@ -38,3 +38,5 @@ CREATE TABLE job_executions (
     CONSTRAINT job_executions_status_check CHECK (status IN ('running', 'succeeded', 'failed'))
 );
 CREATE INDEX job_executions_job_started_idx ON job_executions (job_id, started_at DESC);
+CREATE INDEX job_executions_retention_idx ON job_executions (finished_at, id) WHERE status IN ('succeeded', 'failed');
+COMMENT ON TABLE job_executions IS 'Terminal executions default to 90-day bounded cleanup and optional pre-delete archive. Preserve global execution IDs until a time-bucket identity permits native partitioning and optional pg_partman automation.';

@@ -24,6 +24,7 @@ type Repository interface {
 	FinishExecution(context.Context, sqlx.ExtContext, Execution) error
 	GetExecution(context.Context, string) (Execution, error)
 	ListExecutions(context.Context, string, int, int) ([]Execution, int64, error)
+	DeleteTerminalExecutionsBefore(context.Context, time.Time, int) (int64, error)
 }
 
 type timeFields struct {
@@ -101,6 +102,23 @@ func (r *SQLRepository) ListExecutions(ctx context.Context, jobID string, limit,
 	values := []Execution{}
 	err := r.db.SelectContext(ctx, &values, r.db.Rebind(`SELECT `+executionColumns+` FROM job_executions WHERE job_id=? ORDER BY started_at DESC LIMIT ? OFFSET ?`), jobID, limit, offset)
 	return values, total, err
+}
+
+func (r *SQLRepository) DeleteTerminalExecutionsBefore(ctx context.Context, before time.Time, limit int) (int64, error) {
+	var ids []string
+	query := r.db.Rebind(`SELECT id FROM job_executions WHERE status IN ('succeeded','failed') AND finished_at<? ORDER BY finished_at,id LIMIT ?`)
+	if err := r.db.SelectContext(ctx, &ids, query, before, limit); err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	query, args, err := sqlx.In(`DELETE FROM job_executions WHERE id IN (?) AND status IN ('succeeded','failed') AND finished_at<?`, ids, before)
+	if err != nil {
+		return 0, err
+	}
+	result, err := r.db.ExecContext(ctx, r.db.Rebind(query), args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 func stale(result sql.Result, err error) error {
 	if err != nil {
