@@ -1,6 +1,7 @@
 package httptransport
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	platformauthz "github.com/lihongjie0209/microservice-platform-go/authz"
 	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/auth"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
@@ -60,7 +62,7 @@ func TestAuthentication_PSKPrecedesSkipAndJWT(t *testing.T) {
 			}))
 			router.POST("/api/v1/external/callback", func(c *gin.Context) {
 				value, ok := principal.FromContext(c.Request.Context())
-				if test.status == http.StatusOK && (!ok || value.ID != "psk" || value.Type != principal.TypeSystem) {
+				if test.status == http.StatusOK && (!ok || value.ID != "scheduler-service:psk" || value.Type != principal.TypeServiceAccount) {
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
@@ -72,6 +74,50 @@ func TestAuthentication_PSKPrecedesSkipAndJWT(t *testing.T) {
 			router.ServeHTTP(recorder, request)
 			if recorder.Code != test.status {
 				t.Fatalf("status = %d, want %d", recorder.Code, test.status)
+			}
+		})
+	}
+}
+
+func TestSchedulerHTTPRequirementCoversEveryBusinessRoute(t *testing.T) {
+	t.Parallel()
+	routes := []string{"/api/v1/scheduler/jobs/create", "/api/v1/scheduler/jobs/update", "/api/v1/scheduler/jobs/delete", "/api/v1/scheduler/jobs/get", "/api/v1/scheduler/jobs/list", "/api/v1/scheduler/jobs/trigger", "/api/v1/scheduler/executions/get", "/api/v1/scheduler/executions/list"}
+	for _, route := range routes {
+		requirement, ok := schedulerHTTPRequirement(route)
+		if !ok || requirement.Resource == "" || requirement.Action == "" || requirement.Scope != platformauthz.ScopePlatform {
+			t.Fatalf("route %q requirement = %+v, %v", route, requirement, ok)
+		}
+	}
+}
+
+type authorizerStub struct{ err error }
+
+func (stub authorizerStub) Authorize(context.Context, principal.Principal, platformauthz.Requirement) error {
+	return stub.err
+}
+
+func TestAuthorizationMapsDenialAndDecisionOutage(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "denied", err: platformauthz.ErrDenied, want: http.StatusForbidden},
+		{name: "outage", err: platformauthz.ErrDecisionUnavailable, want: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			router := gin.New()
+			router.Use(RequestID(), func(c *gin.Context) {
+				c.Request = c.Request.WithContext(principal.WithContext(c.Request.Context(), principal.Principal{ID: "user-1", Type: principal.TypeUser}))
+				c.Next()
+			}, Authorization(true, authorizerStub{err: test.err}, slog.New(slog.NewTextHandler(io.Discard, nil))))
+			router.POST("/api/v1/scheduler/jobs/list", func(c *gin.Context) { OK(c, nil) })
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/jobs/list", nil))
+			if recorder.Code != test.want {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.want)
 			}
 		})
 	}

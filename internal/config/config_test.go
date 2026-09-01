@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,6 +24,21 @@ func TestLoad_EnvironmentOverridesFile(t *testing.T) {
 	}
 	if cfg.Cron.ExecutionRetention != 90*24*time.Hour || cfg.Cron.ExecutionCleanupInterval != time.Hour || cfg.Cron.ExecutionCleanupBatchSize != 500 {
 		t.Fatalf("unexpected execution retention defaults: %+v", cfg.Cron)
+	}
+}
+
+func TestConfig_ValidateAuthorizationDependency(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		HTTP:          HTTP{Address: "127.0.0.1:8080", RequestTimeout: time.Second},
+		Database:      Database{Name: "platform"},
+		Health:        Health{DatabaseTimeout: time.Second, RedisTimeout: time.Second},
+		User:          User{CacheTTL: time.Second, LockTTL: time.Second, LockRetryDelay: time.Millisecond},
+		Cron:          Cron{ExecutionRetention: time.Hour, ExecutionCleanupInterval: time.Minute, ExecutionCleanupBatchSize: 1},
+		Authorization: Authorization{Enabled: true},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "outbound.grpc.authorization") {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 

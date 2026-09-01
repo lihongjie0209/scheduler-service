@@ -27,6 +27,7 @@ type Config struct {
 	Swagger       Swagger       `mapstructure:"swagger"`
 	JWT           JWT           `mapstructure:"jwt"`
 	Auth          Auth          `mapstructure:"auth"`
+	Authorization Authorization `mapstructure:"authorization"`
 	Cron          Cron          `mapstructure:"cron"`
 	Migration     Migration     `mapstructure:"migration"`
 	User          User          `mapstructure:"user"`
@@ -159,6 +160,9 @@ type PSK struct {
 	HTTPPaths   []string `mapstructure:"http_paths"`
 	GRPCMethods []string `mapstructure:"grpc_methods"`
 }
+type Authorization struct {
+	Enabled bool `mapstructure:"enabled"`
+}
 type Cron struct {
 	Enabled                   bool          `mapstructure:"enabled"`
 	Timezone                  string        `mapstructure:"timezone"`
@@ -254,6 +258,9 @@ func LoadWithProfile(path, explicitProfile string) (Config, error) {
 	v.AutomaticEnv()
 	if err := v.BindEnv("app.env", "APP_ENV", "APP_APP_ENV"); err != nil {
 		return Config{}, fmt.Errorf("bind environment profile: %w", err)
+	}
+	if err := v.BindEnv("outbound.grpc.authorization.target", "APP_OUTBOUND_GRPC_AUTHORIZATION_TARGET"); err != nil {
+		return Config{}, fmt.Errorf("bind authorization target: %w", err)
 	}
 	setDefaults(v)
 	if err := v.ReadInConfig(); err != nil {
@@ -384,6 +391,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.psk.key", "")
 	v.SetDefault("auth.psk.http_paths", []string{})
 	v.SetDefault("auth.psk.grpc_methods", []string{})
+	v.SetDefault("authorization.enabled", false)
 	v.SetDefault("cron.enabled", true)
 	v.SetDefault("cron.timezone", "Asia/Shanghai")
 	v.SetDefault("cron.sample_spec", "0 */5 * * * *")
@@ -479,6 +487,14 @@ func (c Config) Validate() error {
 	}
 	if c.App.Env == "production" && c.Swagger.Enabled && !c.Swagger.RequireAuth {
 		return errors.New("swagger.require_auth must be enabled in production")
+	}
+	if c.App.Env == "production" && !c.Authorization.Enabled {
+		return errors.New("authorization must be enabled in production")
+	}
+	if c.Authorization.Enabled {
+		if _, ok := c.Outbound.GRPC["authorization"]; !ok {
+			return errors.New("enabled authorization requires outbound.grpc.authorization")
+		}
 	}
 	if (c.Auth.ClientID != "" || c.Auth.ClientSecret != "") && len(c.JWT.Secret) < 32 {
 		return errors.New("jwt.secret must contain at least 32 bytes when auth is enabled")

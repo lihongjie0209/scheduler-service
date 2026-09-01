@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lihongjie0209/microservice-platform-go/principal"
+	platformauthz "github.com/lihongjie0209/microservice-platform-go/authz"
+	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 	schedulerv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/scheduler/v1"
 	"github.com/lihongjie0209/scheduler-service/internal/auth"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
@@ -40,11 +41,11 @@ type Server struct {
 	logger  *slog.Logger
 }
 
-func NewServer(lc fx.Lifecycle, cfg config.Config, authService *auth.Service, healthService *apphealth.Service, jobs *job.Service, metrics *observability.Metrics, logger *slog.Logger) (*Server, error) {
+func NewServer(lc fx.Lifecycle, cfg config.Config, authService *auth.Service, authorizer platformauthz.Authorizer, healthService *apphealth.Service, jobs *job.Service, metrics *observability.Metrics, logger *slog.Logger) (*Server, error) {
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(cfg.GRPC.MaxReceiveBytes),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(environmentInterceptor(cfg.Runtime.ActiveProfile), requestIDInterceptor, idempotencyInterceptor, recoveryInterceptor(logger), authInterceptor(authService, cfg.Auth), metricsInterceptor(metrics, logger)),
+		grpc.ChainUnaryInterceptor(environmentInterceptor(cfg.Runtime.ActiveProfile), requestIDInterceptor, idempotencyInterceptor, recoveryInterceptor(logger), authInterceptor(authService, cfg.Auth), platformauthz.UnaryServerInterceptor(authorizer, schedulerGRPCRequirement(cfg.Authorization.Enabled)), metricsInterceptor(metrics, logger)),
 		grpc.ChainStreamInterceptor(environmentStreamInterceptor(cfg.Runtime.ActiveProfile), requestIDStreamInterceptor, idempotencyStreamInterceptor, recoveryStreamInterceptor(logger), authStreamInterceptor(authService, cfg.Auth), metricsStreamInterceptor(metrics, logger)),
 	}
 	if cfg.GRPC.TLS.Enabled {
@@ -63,6 +64,26 @@ func NewServer(lc fx.Lifecycle, cfg config.Config, authService *auth.Service, he
 	server := &Server{server: grpcServer, address: cfg.GRPC.Address, logger: logger}
 	lc.Append(fx.Hook{OnStart: server.start(cfg.GRPC.Enabled), OnStop: server.stop})
 	return server, nil
+}
+
+func schedulerGRPCRequirement(enabled bool) platformauthz.GRPCResolver {
+	return func(method string) (platformauthz.Requirement, bool) {
+		if !enabled {
+			return platformauthz.Requirement{}, false
+		}
+		requirements := map[string]platformauthz.Requirement{
+			schedulerv1.SchedulerService_CreateJob_FullMethodName:      {Resource: "scheduler.job", Action: "create", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_UpdateJob_FullMethodName:      {Resource: "scheduler.job", Action: "update", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_DeleteJob_FullMethodName:      {Resource: "scheduler.job", Action: "delete", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_GetJob_FullMethodName:         {Resource: "scheduler.job", Action: "read", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_ListJobs_FullMethodName:       {Resource: "scheduler.job", Action: "list", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_TriggerJob_FullMethodName:     {Resource: "scheduler.job", Action: "trigger", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_GetExecution_FullMethodName:   {Resource: "scheduler.execution", Action: "read", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_ListExecutions_FullMethodName: {Resource: "scheduler.execution", Action: "list", Scope: platformauthz.ScopePlatform},
+		}
+		requirement, ok := requirements[method]
+		return requirement, ok
+	}
 }
 
 func (s *Server) start(enabled bool) func(context.Context) error {
@@ -156,7 +177,7 @@ func authenticateGRPC(ctx context.Context, method string, service *auth.Service,
 		if len(values) == 0 || !auth.VerifyPSK(values[0], cfg.PSK.Key) {
 			return nil, status.Error(codes.Unauthenticated, "missing or invalid PSK")
 		}
-		return principal.SystemContext(ctx, "psk"), nil
+		return platformprincipal.WithContext(ctx, platformprincipal.Principal{ID: "scheduler-service:psk", Type: platformprincipal.TypeServiceAccount}), nil
 	}
 	if auth.MatchesAny(method, cfg.SkipGRPCMethods) {
 		return ctx, nil
@@ -172,7 +193,7 @@ func authenticateGRPC(ctx context.Context, method string, service *auth.Service,
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid or expired token")
 	}
-	return principal.WithContext(ctx, identity), nil
+	return platformprincipal.WithContext(ctx, identity), nil
 }
 
 type contextServerStream struct {

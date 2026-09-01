@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -10,7 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/lihongjie0209/microservice-platform-go/principal"
+	platformauthz "github.com/lihongjie0209/microservice-platform-go/authz"
+	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
 	"github.com/lihongjie0209/scheduler-service/internal/auth"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
@@ -219,9 +221,44 @@ func JWT(service *auth.Service, logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 		c.Set("subject", identity.ID)
-		c.Request = c.Request.WithContext(principal.WithContext(c.Request.Context(), identity))
+		ctx := platformprincipal.WithContext(c.Request.Context(), identity)
+		c.Request = c.Request.WithContext(platformauthz.WithCallerCredential(ctx, header))
 		c.Next()
 	}
+}
+
+func Authorization(enabled bool, authorizer platformauthz.Authorizer, logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requirement, protected := schedulerHTTPRequirement(c.FullPath())
+		if !enabled || !protected {
+			c.Next()
+			return
+		}
+		if err := platformauthz.Enforce(c.Request.Context(), authorizer, requirement); err != nil {
+			if errors.Is(err, platformauthz.ErrDecisionUnavailable) {
+				Fail(c, logger, apperror.Unavailable("authorization decision is unavailable", err))
+				return
+			}
+			Fail(c, logger, apperror.Forbidden("permission denied"))
+			return
+		}
+		c.Next()
+	}
+}
+
+func schedulerHTTPRequirement(route string) (platformauthz.Requirement, bool) {
+	requirements := map[string]platformauthz.Requirement{
+		"/api/v1/scheduler/jobs/create":     {Resource: "scheduler.job", Action: "create", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/jobs/update":     {Resource: "scheduler.job", Action: "update", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/jobs/delete":     {Resource: "scheduler.job", Action: "delete", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/jobs/get":        {Resource: "scheduler.job", Action: "read", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/jobs/list":       {Resource: "scheduler.job", Action: "list", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/jobs/trigger":    {Resource: "scheduler.job", Action: "trigger", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/executions/get":  {Resource: "scheduler.execution", Action: "read", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/executions/list": {Resource: "scheduler.execution", Action: "list", Scope: platformauthz.ScopePlatform},
+	}
+	requirement, ok := requirements[route]
+	return requirement, ok
 }
 
 func Authentication(service *auth.Service, logger *slog.Logger, cfg config.Auth) gin.HandlerFunc {
@@ -233,7 +270,8 @@ func Authentication(service *auth.Service, logger *slog.Logger, cfg config.Auth)
 				return
 			}
 			c.Set("subject", "psk")
-			c.Request = c.Request.WithContext(principal.SystemContext(c.Request.Context(), "psk"))
+			ctx := platformprincipal.WithContext(c.Request.Context(), platformprincipal.Principal{ID: "scheduler-service:psk", Type: platformprincipal.TypeServiceAccount})
+			c.Request = c.Request.WithContext(platformauthz.WithCallerCredential(ctx, c.GetHeader("Authorization")))
 			c.Next()
 			return
 		}
