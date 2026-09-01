@@ -42,6 +42,20 @@ func TestConfig_ValidateAuthorizationDependency(t *testing.T) {
 	}
 }
 
+func TestConfig_ValidateApplicationDependency(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		HTTP:     HTTP{Address: "127.0.0.1:8080", RequestTimeout: time.Second},
+		Database: Database{Enabled: true, Type: "postgres", DSN: "postgres://app:app@localhost/app", Name: "platform"},
+		Health:   Health{DatabaseTimeout: time.Second, RedisTimeout: time.Second},
+		User:     User{CacheTTL: time.Second, LockTTL: time.Second, LockRetryDelay: time.Millisecond},
+		Cron:     Cron{ExecutionRetention: time.Hour, ExecutionCleanupInterval: time.Minute, ExecutionCleanupBatchSize: 1},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "outbound.grpc.application") {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestLoad_ExecutionRetentionEnvironmentOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("http:\n  address: 127.0.0.1:8080\n"), 0o600); err != nil {

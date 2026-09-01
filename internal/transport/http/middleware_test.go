@@ -84,7 +84,7 @@ func TestSchedulerHTTPRequirementCoversEveryBusinessRoute(t *testing.T) {
 	routes := []string{"/api/v1/scheduler/jobs/create", "/api/v1/scheduler/jobs/update", "/api/v1/scheduler/jobs/delete", "/api/v1/scheduler/jobs/get", "/api/v1/scheduler/jobs/list", "/api/v1/scheduler/jobs/trigger", "/api/v1/scheduler/executions/get", "/api/v1/scheduler/executions/list"}
 	for _, route := range routes {
 		requirement, ok := schedulerHTTPRequirement(route)
-		if !ok || requirement.Resource == "" || requirement.Action == "" || requirement.Scope != platformauthz.ScopePlatform {
+		if !ok || requirement.Resource == "" || requirement.Action == "" || requirement.Scope != platformauthz.ScopeTenant {
 			t.Fatalf("route %q requirement = %+v, %v", route, requirement, ok)
 		}
 	}

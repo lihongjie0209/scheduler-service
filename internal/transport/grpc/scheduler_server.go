@@ -22,14 +22,14 @@ func newSchedulerServer(jobs *job.Service) schedulerv1.SchedulerServiceServer {
 }
 
 func (s *schedulerServer) CreateJob(ctx context.Context, request *schedulerv1.CreateJobRequest) (*schedulerv1.CreateJobResponse, error) {
-	value, err := s.jobs.Create(ctx, protoInput(request.GetName(), request.GetCronExpression(), request.GetTimezone(), request.GetUpstream(), request.GetFullMethod(), request.GetRequestJson(), request.GetTimeoutMilliseconds(), request.GetEnabled()))
+	value, err := s.jobs.Create(ctx, protoInput(request.GetTenantId(), request.GetApplicationId(), request.GetName(), request.GetCronExpression(), request.GetTimezone(), request.GetUpstream(), request.GetFullMethod(), request.GetRequestJson(), request.GetTimeoutMilliseconds(), request.GetEnabled()))
 	if err != nil {
 		return nil, grpcError(err)
 	}
 	return &schedulerv1.CreateJobResponse{Job: protoJob(value)}, nil
 }
 func (s *schedulerServer) UpdateJob(ctx context.Context, request *schedulerv1.UpdateJobRequest) (*schedulerv1.UpdateJobResponse, error) {
-	value, err := s.jobs.Update(ctx, request.GetId(), protoInput(request.GetName(), request.GetCronExpression(), request.GetTimezone(), request.GetUpstream(), request.GetFullMethod(), request.GetRequestJson(), request.GetTimeoutMilliseconds(), request.GetEnabled()), request.GetVersion())
+	value, err := s.jobs.Update(ctx, request.GetId(), protoInput("", "", request.GetName(), request.GetCronExpression(), request.GetTimezone(), request.GetUpstream(), request.GetFullMethod(), request.GetRequestJson(), request.GetTimeoutMilliseconds(), request.GetEnabled()), request.GetVersion())
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -49,7 +49,7 @@ func (s *schedulerServer) GetJob(ctx context.Context, request *schedulerv1.GetJo
 	return &schedulerv1.GetJobResponse{Job: protoJob(value)}, nil
 }
 func (s *schedulerServer) ListJobs(ctx context.Context, request *schedulerv1.ListJobsRequest) (*schedulerv1.ListJobsResponse, error) {
-	page, err := s.jobs.List(ctx, request.GetStatus(), int(request.GetPage()), int(request.GetPageSize()))
+	page, err := s.jobs.List(ctx, request.GetTenantId(), request.GetApplicationId(), request.GetStatus(), int(request.GetPage()), int(request.GetPageSize()))
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -85,14 +85,14 @@ func (s *schedulerServer) ListExecutions(ctx context.Context, request *scheduler
 	return &schedulerv1.ListExecutionsResponse{Items: items, Total: page.Total, Page: int32(page.Page), PageSize: int32(page.PageSize)}, nil
 }
 
-func protoInput(name, expression, timezone, upstream, method, requestJSON string, timeout int64, enabled bool) job.Input {
-	return job.Input{Name: name, CronExpression: expression, Timezone: timezone, Upstream: upstream, FullMethod: method, RequestJSON: requestJSON, TimeoutMilliseconds: timeout, Enabled: enabled}
+func protoInput(tenantID, applicationID, name, expression, timezone, upstream, method, requestJSON string, timeout int64, enabled bool) job.Input {
+	return job.Input{TenantID: tenantID, ApplicationID: applicationID, Name: name, CronExpression: expression, Timezone: timezone, Upstream: upstream, FullMethod: method, RequestJSON: requestJSON, TimeoutMilliseconds: timeout, Enabled: enabled}
 }
 func protoJob(value job.Job) *schedulerv1.Job {
-	return &schedulerv1.Job{Id: value.ID, Name: value.Name, CronExpression: value.CronExpression, Timezone: value.Timezone, Upstream: value.Upstream, FullMethod: value.FullMethod, RequestJson: value.RequestJSON, TimeoutMilliseconds: value.TimeoutMilliseconds, Status: value.Status, Version: value.Version, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt), CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy}
+	return &schedulerv1.Job{Id: value.ID, TenantId: value.TenantID, ApplicationId: value.ApplicationID, Name: value.Name, CronExpression: value.CronExpression, Timezone: value.Timezone, Upstream: value.Upstream, FullMethod: value.FullMethod, RequestJson: value.RequestJSON, TimeoutMilliseconds: value.TimeoutMilliseconds, Status: value.Status, Version: value.Version, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt), CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy}
 }
 func protoExecution(value job.Execution) *schedulerv1.Execution {
-	result := &schedulerv1.Execution{Id: value.ID, JobId: value.JobID, TriggerType: value.TriggerType, Status: value.Status, ResponseJson: value.ResponseJSON, ErrorCode: value.ErrorCode, ErrorMessage: value.ErrorMessage, StartedAt: timestamppb.New(value.StartedAt), DurationMilliseconds: value.DurationMilliseconds, Version: value.Version, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt), CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy}
+	result := &schedulerv1.Execution{Id: value.ID, JobId: value.JobID, TenantId: value.TenantID, ApplicationId: value.ApplicationID, TriggerType: value.TriggerType, Status: value.Status, ResponseJson: value.ResponseJSON, ErrorCode: value.ErrorCode, ErrorMessage: value.ErrorMessage, StartedAt: timestamppb.New(value.StartedAt), DurationMilliseconds: value.DurationMilliseconds, Version: value.Version, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt), CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy}
 	if value.FinishedAt != nil {
 		result.FinishedAt = timestamppb.New(*value.FinishedAt)
 	}

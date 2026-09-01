@@ -54,7 +54,7 @@ func TestSchedulerGRPCRequirementCoversEveryBusinessMethod(t *testing.T) {
 	methods := []string{schedulerv1.SchedulerService_CreateJob_FullMethodName, schedulerv1.SchedulerService_UpdateJob_FullMethodName, schedulerv1.SchedulerService_DeleteJob_FullMethodName, schedulerv1.SchedulerService_GetJob_FullMethodName, schedulerv1.SchedulerService_ListJobs_FullMethodName, schedulerv1.SchedulerService_TriggerJob_FullMethodName, schedulerv1.SchedulerService_GetExecution_FullMethodName, schedulerv1.SchedulerService_ListExecutions_FullMethodName}
 	for _, method := range methods {
 		requirement, ok := resolve(method)
-		if !ok || requirement.Resource == "" || requirement.Action == "" || requirement.Scope != platformauthz.ScopePlatform {
+		if !ok || requirement.Resource == "" || requirement.Action == "" || requirement.Scope != platformauthz.ScopeTenant {
 			t.Fatalf("method %q requirement = %+v, %v", method, requirement, ok)
 		}
 	}

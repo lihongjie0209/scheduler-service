@@ -248,14 +248,14 @@ func Authorization(enabled bool, authorizer platformauthz.Authorizer, logger *sl
 
 func schedulerHTTPRequirement(route string) (platformauthz.Requirement, bool) {
 	requirements := map[string]platformauthz.Requirement{
-		"/api/v1/scheduler/jobs/create":     {Resource: "scheduler.job", Action: "create", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/jobs/update":     {Resource: "scheduler.job", Action: "update", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/jobs/delete":     {Resource: "scheduler.job", Action: "delete", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/jobs/get":        {Resource: "scheduler.job", Action: "read", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/jobs/list":       {Resource: "scheduler.job", Action: "list", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/jobs/trigger":    {Resource: "scheduler.job", Action: "trigger", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/executions/get":  {Resource: "scheduler.execution", Action: "read", Scope: platformauthz.ScopePlatform},
-		"/api/v1/scheduler/executions/list": {Resource: "scheduler.execution", Action: "list", Scope: platformauthz.ScopePlatform},
+		"/api/v1/scheduler/jobs/create":     {Resource: "scheduler.job", Action: "create", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/jobs/update":     {Resource: "scheduler.job", Action: "update", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/jobs/delete":     {Resource: "scheduler.job", Action: "delete", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/jobs/get":        {Resource: "scheduler.job", Action: "read", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/jobs/list":       {Resource: "scheduler.job", Action: "list", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/jobs/trigger":    {Resource: "scheduler.job", Action: "trigger", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/executions/get":  {Resource: "scheduler.execution", Action: "read", Scope: platformauthz.ScopeTenant},
+		"/api/v1/scheduler/executions/list": {Resource: "scheduler.execution", Action: "list", Scope: platformauthz.ScopeTenant},
 	}
 	requirement, ok := requirements[route]
 	return requirement, ok

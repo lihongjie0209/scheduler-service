@@ -117,4 +117,4 @@ func (w slogWriter) Printf(format string, args ...any) {
 	w.logger.Error("scheduler runtime event", "detail", format, "args", args)
 }
 
-var Module = fx.Module("scheduled-jobs", fx.Provide(NewRepository, NewDynamicInvoker, NewService, NewRuntime, NewExecutionCleaner), fx.Invoke(func(*Runtime, *ExecutionCleaner) {}))
+var Module = fx.Module("scheduled-jobs", fx.Provide(NewRepository, NewDynamicInvoker, NewRuntimeService, NewRuntime, NewExecutionCleaner), fx.Invoke(func(*Runtime, *ExecutionCleaner) {}))

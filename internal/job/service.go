@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lihongjie0209/microservice-platform-go/appaccess"
 	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
 	"github.com/lihongjie0209/scheduler-service/internal/cache"
@@ -15,20 +16,34 @@ import (
 	"github.com/lihongjie0209/scheduler-service/internal/idempotency"
 	"github.com/lihongjie0209/scheduler-service/internal/requestid"
 	"github.com/robfig/cron/v3"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 type Service struct {
-	repository Repository
-	transactor *database.Transactor
-	invoker    Invoker
-	locker     *cache.Locker
-	now        func() time.Time
-	changed    chan struct{}
+	repository   Repository
+	transactor   *database.Transactor
+	invoker      Invoker
+	locker       *cache.Locker
+	now          func() time.Time
+	changed      chan struct{}
+	applications appaccess.Verifier
 }
 
+type allowAllApplications struct{}
+
+func (allowAllApplications) Verify(context.Context, string, string) error { return nil }
+
 func NewService(repository Repository, transactor *database.Transactor, invoker Invoker, locker *cache.Locker) *Service {
-	return &Service{repository: repository, transactor: transactor, invoker: invoker, locker: locker, now: time.Now, changed: make(chan struct{}, 1)}
+	return &Service{repository: repository, transactor: transactor, invoker: invoker, locker: locker, applications: allowAllApplications{}, now: time.Now, changed: make(chan struct{}, 1)}
+}
+func NewRuntimeService(repository Repository, transactor *database.Transactor, invoker Invoker, locker *cache.Locker, applications appaccess.Verifier) (*Service, error) {
+	if applications == nil {
+		return nil, errors.New("application verifier is required")
+	}
+	service := NewService(repository, transactor, invoker, locker)
+	service.applications = applications
+	return service, nil
 }
 func (s *Service) Changes() <-chan struct{} { return s.changed }
 func (s *Service) signalChanged() {
@@ -43,12 +58,16 @@ func (s *Service) Create(ctx context.Context, input Input) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	input.TenantID, input.ApplicationID = strings.TrimSpace(input.TenantID), strings.TrimSpace(input.ApplicationID)
+	if err := s.authorizeScope(ctx, input.TenantID, input.ApplicationID); err != nil {
+		return Job{}, err
+	}
 	input, err = normalizeAndValidate(ctx, s.invoker, input)
 	if err != nil {
 		return Job{}, err
 	}
 	now := s.now()
-	value := Job{ID: uuid.NewString(), Name: input.Name, CronExpression: input.CronExpression, Timezone: input.Timezone, Upstream: input.Upstream, FullMethod: input.FullMethod, RequestJSON: input.RequestJSON, TimeoutMilliseconds: input.TimeoutMilliseconds, Status: statusFromEnabled(input.Enabled), Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: actor, UpdatedBy: actor}
+	value := Job{ID: uuid.NewString(), TenantID: input.TenantID, ApplicationID: input.ApplicationID, Name: input.Name, CronExpression: input.CronExpression, Timezone: input.Timezone, Upstream: input.Upstream, FullMethod: input.FullMethod, RequestJSON: input.RequestJSON, TimeoutMilliseconds: input.TimeoutMilliseconds, Status: statusFromEnabled(input.Enabled), Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: actor, UpdatedBy: actor}
 	if err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error { return s.repository.CreateJob(ctx, tx, value) }); err != nil {
 		return Job{}, translate(err)
 	}
@@ -63,13 +82,17 @@ func (s *Service) Update(ctx context.Context, id string, input Input, expected i
 	if err != nil {
 		return Job{}, err
 	}
-	input, err = normalizeAndValidate(ctx, s.invoker, input)
-	if err != nil {
-		return Job{}, err
-	}
 	current, err := s.repository.GetJob(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return Job{}, translate(err)
+	}
+	if err := s.authorizeScope(ctx, current.TenantID, current.ApplicationID); err != nil {
+		return Job{}, err
+	}
+	input.TenantID, input.ApplicationID = current.TenantID, current.ApplicationID
+	input, err = normalizeAndValidate(ctx, s.invoker, input)
+	if err != nil {
+		return Job{}, err
 	}
 	current.Name, current.CronExpression, current.Timezone, current.Upstream, current.FullMethod, current.RequestJSON, current.TimeoutMilliseconds, current.Status = input.Name, input.CronExpression, input.Timezone, input.Upstream, input.FullMethod, input.RequestJSON, input.TimeoutMilliseconds, statusFromEnabled(input.Enabled)
 	current.UpdatedAt, current.UpdatedBy = s.now(), actor
@@ -88,6 +111,13 @@ func (s *Service) Delete(ctx context.Context, id string, expected int64) error {
 	if err != nil {
 		return err
 	}
+	current, err := s.repository.GetJob(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return translate(err)
+	}
+	if err := s.authorizeScope(ctx, current.TenantID, current.ApplicationID); err != nil {
+		return err
+	}
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
 		return s.repository.DeleteJob(ctx, tx, strings.TrimSpace(id), expected, timeFields{UpdatedAt: s.now(), UpdatedBy: actor})
 	})
@@ -98,9 +128,18 @@ func (s *Service) Delete(ctx context.Context, id string, expected int64) error {
 }
 func (s *Service) Get(ctx context.Context, id string) (Job, error) {
 	value, err := s.repository.GetJob(ctx, strings.TrimSpace(id))
-	return value, translate(err)
+	if err != nil {
+		return Job{}, translate(err)
+	}
+	if err := s.authorizeScope(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Job{}, err
+	}
+	return value, nil
 }
-func (s *Service) List(ctx context.Context, statusValue string, page, pageSize int) (Page[Job], error) {
+func (s *Service) List(ctx context.Context, tenantID, applicationID, statusValue string, page, pageSize int) (Page[Job], error) {
+	if err := s.authorizeScope(ctx, tenantID, applicationID); err != nil {
+		return Page[Job]{}, err
+	}
 	page, pageSize, err := pagination(page, pageSize)
 	if err != nil {
 		return Page[Job]{}, err
@@ -109,7 +148,7 @@ func (s *Service) List(ctx context.Context, statusValue string, page, pageSize i
 	if statusValue != "" && statusValue != "enabled" && statusValue != "disabled" {
 		return Page[Job]{}, apperror.Invalid("status must be enabled or disabled", nil)
 	}
-	values, total, err := s.repository.ListJobs(ctx, statusValue, pageSize, (page-1)*pageSize)
+	values, total, err := s.repository.ListJobs(ctx, strings.TrimSpace(tenantID), strings.TrimSpace(applicationID), statusValue, pageSize, (page-1)*pageSize)
 	return Page[Job]{Items: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
 }
 func (s *Service) Trigger(ctx context.Context, id string) (Execution, error) {
@@ -121,9 +160,15 @@ func (s *Service) Trigger(ctx context.Context, id string) (Execution, error) {
 	if err != nil {
 		return Execution{}, translate(err)
 	}
+	if err := s.authorizeScope(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Execution{}, err
+	}
 	return s.execute(ctx, value, "manual", actor)
 }
 func (s *Service) ExecuteScheduled(ctx context.Context, value Job) (Execution, error) {
+	if err := s.verifyApplication(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Execution{}, err
+	}
 	return s.execute(ctx, value, "scheduled", "scheduler-service")
 }
 func (s *Service) execute(parent context.Context, value Job, triggerType, actor string) (Execution, error) {
@@ -146,7 +191,7 @@ func (s *Service) execute(parent context.Context, value Job, triggerType, actor 
 		_ = lock.Unlock(unlockCtx)
 	}()
 	started := s.now()
-	execution := Execution{ID: uuid.NewString(), JobID: value.ID, TriggerType: triggerType, Status: "running", StartedAt: started, Version: 1, CreatedAt: started, UpdatedAt: started, CreatedBy: actor, UpdatedBy: actor}
+	execution := Execution{ID: uuid.NewString(), JobID: value.ID, TenantID: value.TenantID, ApplicationID: value.ApplicationID, TriggerType: triggerType, Status: "running", StartedAt: started, Version: 1, CreatedAt: started, UpdatedAt: started, CreatedBy: actor, UpdatedBy: actor}
 	if err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error { return s.repository.CreateExecution(ctx, tx, execution) }); err != nil {
 		return Execution{}, translate(err)
 	}
@@ -154,6 +199,7 @@ func (s *Service) execute(parent context.Context, value Job, triggerType, actor 
 	if _, ok := requestid.FromContext(ctx); !ok {
 		ctx = requestid.WithContext(ctx, execution.ID)
 	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-tenant-id", value.TenantID, "x-application-id", value.ApplicationID)
 	response, invokeErr := s.invoker.Invoke(ctx, value.Upstream, value.FullMethod, value.RequestJSON)
 	finished := s.now()
 	execution.FinishedAt = &finished
@@ -178,10 +224,23 @@ func (s *Service) execute(parent context.Context, value Job, triggerType, actor 
 }
 func (s *Service) GetExecution(ctx context.Context, id string) (Execution, error) {
 	value, err := s.repository.GetExecution(ctx, strings.TrimSpace(id))
-	return value, translate(err)
+	if err != nil {
+		return Execution{}, translate(err)
+	}
+	if err := s.authorizeScope(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Execution{}, err
+	}
+	return value, nil
 }
 func (s *Service) ListExecutions(ctx context.Context, jobID string, page, pageSize int) (Page[Execution], error) {
-	page, pageSize, err := pagination(page, pageSize)
+	value, err := s.repository.GetJob(ctx, strings.TrimSpace(jobID))
+	if err != nil {
+		return Page[Execution]{}, translate(err)
+	}
+	if err := s.authorizeScope(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Page[Execution]{}, err
+	}
+	page, pageSize, err = pagination(page, pageSize)
 	if err != nil {
 		return Page[Execution]{}, err
 	}
@@ -190,9 +249,10 @@ func (s *Service) ListExecutions(ctx context.Context, jobID string, page, pageSi
 }
 
 func normalizeAndValidate(ctx context.Context, invoker Invoker, input Input) (Input, error) {
+	input.TenantID, input.ApplicationID = strings.TrimSpace(input.TenantID), strings.TrimSpace(input.ApplicationID)
 	input.Name, input.CronExpression, input.Timezone, input.Upstream, input.FullMethod, input.RequestJSON = strings.TrimSpace(input.Name), strings.TrimSpace(input.CronExpression), strings.TrimSpace(input.Timezone), strings.TrimSpace(input.Upstream), strings.TrimSpace(input.FullMethod), strings.TrimSpace(input.RequestJSON)
-	if input.Name == "" || input.CronExpression == "" || input.Upstream == "" || input.FullMethod == "" {
-		return Input{}, apperror.Invalid("name, cron_expression, upstream, and full_method are required", nil)
+	if input.TenantID == "" || input.ApplicationID == "" || input.Name == "" || input.CronExpression == "" || input.Upstream == "" || input.FullMethod == "" {
+		return Input{}, apperror.Invalid("tenant_id, application_id, name, cron_expression, upstream, and full_method are required", nil)
 	}
 	if input.Timezone == "" {
 		input.Timezone = "Asia/Shanghai"
@@ -222,6 +282,33 @@ func actorFromContext(ctx context.Context) (string, error) {
 	}
 	return value.ID, nil
 }
+
+func (s *Service) authorizeScope(ctx context.Context, tenantID, applicationID string) error {
+	tenantID, applicationID = strings.TrimSpace(tenantID), strings.TrimSpace(applicationID)
+	if tenantID == "" || applicationID == "" {
+		return apperror.Invalid("tenant_id and application_id are required", nil)
+	}
+	identity, ok := principal.FromContext(ctx)
+	if !ok || identity.ID == "" {
+		return apperror.Unauthorized("authenticated actor is required")
+	}
+	if identity.Type == principal.TypeUser && (identity.TenantID == "" || identity.TenantID != tenantID) {
+		return apperror.Forbidden("tenant access denied")
+	}
+	return s.verifyApplication(ctx, tenantID, applicationID)
+}
+
+func (s *Service) verifyApplication(ctx context.Context, tenantID, applicationID string) error {
+	err := s.applications.Verify(ctx, strings.TrimSpace(tenantID), strings.TrimSpace(applicationID))
+	if errors.Is(err, appaccess.ErrNotGranted) {
+		return apperror.Forbidden("tenant application access denied")
+	}
+	if err != nil {
+		return apperror.Unavailable("verify tenant application access", err)
+	}
+	return nil
+}
+
 func statusFromEnabled(enabled bool) string {
 	if enabled {
 		return "enabled"

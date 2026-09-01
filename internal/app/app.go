@@ -40,6 +40,7 @@ func New(cfg config.Config) *fx.App {
 		fx.Provide(observability.NewMetrics),
 		outbound.Module,
 		fx.Provide(authorization.New),
+		fx.Provide(newApplicationVerifier),
 		job.Module,
 		grpctransport.Module,
 		httptransport.Module,

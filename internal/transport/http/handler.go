@@ -81,6 +81,8 @@ func (h *Handler) Me(c *gin.Context) {
 func (h *Handler) Version(c *gin.Context) { OK(c, buildinfo.Current()) }
 
 type JobInput struct {
+	TenantID            string `json:"tenant_id"`
+	ApplicationID       string `json:"application_id"`
 	Name                string `json:"name" binding:"required"`
 	CronExpression      string `json:"cron_expression" binding:"required"`
 	Timezone            string `json:"timezone"`
@@ -104,9 +106,11 @@ type JobIDRequest struct {
 	ID string `json:"id" binding:"required"`
 }
 type ListJobsRequest struct {
-	Status   string `json:"status"`
-	Page     int    `json:"page"`
-	PageSize int    `json:"page_size"`
+	TenantID      string `json:"tenant_id" binding:"required"`
+	ApplicationID string `json:"application_id" binding:"required"`
+	Status        string `json:"status"`
+	Page          int    `json:"page"`
+	PageSize      int    `json:"page_size"`
 }
 type ListExecutionsRequest struct {
 	JobID    string `json:"job_id" binding:"required"`
@@ -127,7 +131,7 @@ type ExecutionPage struct {
 }
 
 func input(request JobInput) job.Input {
-	return job.Input{Name: request.Name, CronExpression: request.CronExpression, Timezone: request.Timezone, Upstream: request.Upstream, FullMethod: request.FullMethod, RequestJSON: request.RequestJSON, TimeoutMilliseconds: request.TimeoutMilliseconds, Enabled: request.Enabled}
+	return job.Input{TenantID: request.TenantID, ApplicationID: request.ApplicationID, Name: request.Name, CronExpression: request.CronExpression, Timezone: request.Timezone, Upstream: request.Upstream, FullMethod: request.FullMethod, RequestJSON: request.RequestJSON, TimeoutMilliseconds: request.TimeoutMilliseconds, Enabled: request.Enabled}
 }
 func (h *Handler) bind(c *gin.Context, request any) bool {
 	if err := c.ShouldBindJSON(request); err != nil {
@@ -238,7 +242,7 @@ func (h *Handler) ListJobs(c *gin.Context) {
 	if !h.bind(c, &request) {
 		return
 	}
-	value, err := h.jobs.List(c.Request.Context(), request.Status, request.Page, request.PageSize)
+	value, err := h.jobs.List(c.Request.Context(), request.TenantID, request.ApplicationID, request.Status, request.Page, request.PageSize)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return

@@ -1,0 +1,3 @@
+ALTER TABLE scheduled_jobs ADD COLUMN tenant_id VARCHAR(64) NOT NULL DEFAULT '' AFTER id, ADD COLUMN application_id VARCHAR(64) NOT NULL DEFAULT '' AFTER tenant_id, ADD INDEX scheduled_jobs_scope_status_idx (tenant_id, application_id, status, id);
+UPDATE scheduled_jobs SET status = 'disabled', version = version + 1, updated_at = CURRENT_TIMESTAMP(6), updated_by = 'migration:application-scope' WHERE status = 'enabled';
+ALTER TABLE job_executions ADD COLUMN tenant_id VARCHAR(64) NOT NULL DEFAULT '' AFTER job_id, ADD COLUMN application_id VARCHAR(64) NOT NULL DEFAULT '' AFTER tenant_id, ADD INDEX job_executions_scope_job_idx (tenant_id, application_id, job_id, started_at DESC);

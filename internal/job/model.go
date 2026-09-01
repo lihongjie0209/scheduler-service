@@ -4,6 +4,8 @@ import "time"
 
 type Job struct {
 	ID                  string    `db:"id" json:"id"`
+	TenantID            string    `db:"tenant_id" json:"tenant_id"`
+	ApplicationID       string    `db:"application_id" json:"application_id"`
 	Name                string    `db:"name" json:"name"`
 	CronExpression      string    `db:"cron_expression" json:"cron_expression"`
 	Timezone            string    `db:"timezone" json:"timezone"`
@@ -22,6 +24,8 @@ type Job struct {
 type Execution struct {
 	ID                   string     `db:"id" json:"id"`
 	JobID                string     `db:"job_id" json:"job_id"`
+	TenantID             string     `db:"tenant_id" json:"tenant_id"`
+	ApplicationID        string     `db:"application_id" json:"application_id"`
 	TriggerType          string     `db:"trigger_type" json:"trigger_type"`
 	Status               string     `db:"status" json:"status"`
 	ResponseJSON         string     `db:"response_json" json:"response_json"`
@@ -45,6 +49,8 @@ type Page[T any] struct {
 }
 
 type Input struct {
+	TenantID            string
+	ApplicationID       string
 	Name                string
 	CronExpression      string
 	Timezone            string

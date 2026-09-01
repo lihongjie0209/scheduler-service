@@ -58,7 +58,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			t.Cleanup(func() { _ = db.Close() })
 			repository := job.NewRepository(db)
 			now := time.Now().Truncate(time.Microsecond)
-			created := job.Job{ID: "job-" + databaseType, Name: "health", CronExpression: "0 0 0 * * *", Timezone: "Asia/Shanghai", Upstream: "health", FullMethod: "/grpc.health.v1.Health/Check", RequestJSON: `{}`, TimeoutMilliseconds: 5000, Status: "enabled", Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "integration", UpdatedBy: "integration"}
+			created := job.Job{ID: "job-" + databaseType, TenantID: "tenant-1", ApplicationID: "application-1", Name: "health", CronExpression: "0 0 0 * * *", Timezone: "Asia/Shanghai", Upstream: "health", FullMethod: "/grpc.health.v1.Health/Check", RequestJSON: `{}`, TimeoutMilliseconds: 5000, Status: "enabled", Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "integration", UpdatedBy: "integration"}
 			tx, err := db.BeginTxx(ctx, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -81,7 +81,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if err := repository.UpdateJob(ctx, db, loaded, 1); err != job.ErrStaleVersion {
 				t.Fatalf("stale update error=%v", err)
 			}
-			execution := job.Execution{ID: "execution-" + databaseType, JobID: created.ID, TriggerType: "manual", Status: "running", StartedAt: now, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "integration", UpdatedBy: "integration"}
+			execution := job.Execution{ID: "execution-" + databaseType, JobID: created.ID, TenantID: created.TenantID, ApplicationID: created.ApplicationID, TriggerType: "manual", Status: "running", StartedAt: now, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "integration", UpdatedBy: "integration"}
 			if err := repository.CreateExecution(ctx, db, execution); err != nil {
 				t.Fatal(err)
 			}

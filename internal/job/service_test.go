@@ -5,10 +5,26 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/lihongjie0209/microservice-platform-go/appaccess"
+	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
 )
 
 type fakeInvoker struct{ err error }
+
+type fakeApplicationVerifier struct{ err error }
+
+func (f fakeApplicationVerifier) Verify(context.Context, string, string) error { return f.err }
+
+type trackingInvoker struct{ validateCalls int }
+
+func (f *trackingInvoker) Validate(context.Context, string, string, string) error {
+	f.validateCalls++
+	return nil
+}
+func (f *trackingInvoker) Invoke(context.Context, string, string, string) (string, error) {
+	return `{}`, nil
+}
 
 func (f fakeInvoker) Validate(context.Context, string, string, string) error { return f.err }
 func (f fakeInvoker) Invoke(context.Context, string, string, string) (string, error) {
@@ -17,7 +33,7 @@ func (f fakeInvoker) Invoke(context.Context, string, string, string) (string, er
 
 func TestNormalizeAndValidate(t *testing.T) {
 	t.Parallel()
-	valid := Input{Name: "daily report", CronExpression: "0 0 2 * * *", Upstream: "reporting", FullMethod: "/platform.reporting.v1.Reporting/Generate", RequestJSON: `{}`, TimeoutMilliseconds: 5000, Enabled: true}
+	valid := Input{TenantID: "tenant-1", ApplicationID: "application-1", Name: "daily report", CronExpression: "0 0 2 * * *", Upstream: "reporting", FullMethod: "/platform.reporting.v1.Reporting/Generate", RequestJSON: `{}`, TimeoutMilliseconds: 5000, Enabled: true}
 	for _, test := range []struct {
 		name      string
 		mutate    func(*Input)
@@ -63,5 +79,58 @@ func TestStatusFromEnabled(t *testing.T) {
 	t.Parallel()
 	if statusFromEnabled(true) != "enabled" || statusFromEnabled(false) != "disabled" {
 		t.Fatal("unexpected status mapping")
+	}
+}
+
+func TestAuthorizeScopeEnforcesTenantAndApplicationGrant(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		tenantID string
+		appID    string
+		verifier error
+		wantCode int
+	}{
+		{name: "granted", tenantID: "tenant-1", appID: "application-1"},
+		{name: "different tenant", tenantID: "tenant-2", appID: "application-1", wantCode: apperror.CodeForbidden},
+		{name: "missing scope", tenantID: "tenant-1", wantCode: apperror.CodeInvalidArgument},
+		{name: "application denied", tenantID: "tenant-1", appID: "application-1", verifier: appaccess.ErrNotGranted, wantCode: apperror.CodeForbidden},
+		{name: "application unavailable", tenantID: "tenant-1", appID: "application-1", verifier: errors.New("unavailable"), wantCode: apperror.CodeDependencyUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			service := NewService(nil, nil, nil, nil)
+			service.applications = fakeApplicationVerifier{err: test.verifier}
+			ctx := principal.WithContext(t.Context(), principal.Principal{ID: "user-1", Type: principal.TypeUser, TenantID: "tenant-1"})
+			err := service.authorizeScope(ctx, test.tenantID, test.appID)
+			if test.wantCode == 0 {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			var appErr *apperror.Error
+			if !errors.As(err, &appErr) || appErr.Code != test.wantCode {
+				t.Fatalf("authorizeScope() error = %v, want code %d", err, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestCreateAuthorizesScopeBeforeInspectingDynamicTarget(t *testing.T) {
+	t.Parallel()
+
+	invoker := &trackingInvoker{}
+	service := NewService(nil, nil, invoker, nil)
+	service.applications = fakeApplicationVerifier{err: appaccess.ErrNotGranted}
+	ctx := principal.WithContext(t.Context(), principal.Principal{ID: "user-1", Type: principal.TypeUser, TenantID: "tenant-1"})
+	_, err := service.Create(ctx, Input{TenantID: "tenant-1", ApplicationID: "application-1"})
+	var appErr *apperror.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperror.CodeForbidden {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if invoker.validateCalls != 0 {
+		t.Fatalf("dynamic target inspected %d times before authorization", invoker.validateCalls)
 	}
 }

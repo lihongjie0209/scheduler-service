@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	applicationv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/application/v1"
 	schedulerv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/scheduler/v1"
 	"github.com/lihongjie0209/scheduler-service/internal/app"
 	"github.com/lihongjie0209/scheduler-service/internal/auth"
@@ -56,6 +57,7 @@ func TestDynamicGRPCSchedulerEndToEnd(t *testing.T) {
 	}
 
 	upstreamAddress := freeAddress(t)
+	applicationAddress := startAllowApplicationServer(t)
 	upstreamListener, err := net.Listen("tcp", upstreamAddress)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +82,10 @@ func TestDynamicGRPCSchedulerEndToEnd(t *testing.T) {
 		Redis:     config.Redis{Enabled: true, Address: redisOptions.Addr, DB: redisOptions.DB, DialTimeout: 5 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 3 * time.Second}, Health: config.Health{DatabaseTimeout: 2 * time.Second, RedisTimeout: 2 * time.Second}, Observability: config.Observability{MetricsEnabled: true},
 		JWT: config.JWT{Issuer: "integration", Secret: secret, TTL: time.Hour}, Auth: config.Auth{ClientID: "client", ClientSecret: "secret", SkipHTTPPaths: []string{"/api/v1/version"}, SkipGRPCMethods: []string{"/grpc.health.v1.Health/*"}}, Cron: config.Cron{Enabled: false, Timezone: "Asia/Shanghai"},
 		Idempotency: config.Idempotency{Enabled: true, ProcessingTTL: 30 * time.Second, ResultTTL: time.Hour, FailureTTL: time.Minute},
-		Outbound:    config.Outbound{GRPC: map[string]config.GRPCUpstream{"health": {Target: upstreamAddress, Timeout: 5 * time.Second, Retry: config.Retry{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond}, Breaker: config.Breaker{FailureThreshold: 3, OpenTimeout: time.Second}}}},
+		Outbound: config.Outbound{GRPC: map[string]config.GRPCUpstream{
+			"application": {Target: applicationAddress, Timeout: 2 * time.Second},
+			"health":      {Target: upstreamAddress, Timeout: 5 * time.Second, Retry: config.Retry{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond}, Breaker: config.Breaker{FailureThreshold: 3, OpenTimeout: time.Second}},
+		}},
 	}
 	application := app.New(cfg)
 	if err := application.Start(ctx); err != nil {
@@ -96,7 +101,7 @@ func TestDynamicGRPCSchedulerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	createBody := `{"name":"health","cron_expression":"0 0 0 * * *","timezone":"Asia/Shanghai","upstream":"health","full_method":"/grpc.health.v1.Health/Check","request_json":"{\"service\":\"\"}","timeout_milliseconds":5000,"enabled":false}`
+	createBody := `{"tenant_id":"tenant-1","application_id":"application-1","name":"health","cron_expression":"0 0 0 * * *","timezone":"Asia/Shanghai","upstream":"health","full_method":"/grpc.health.v1.Health/Check","request_json":"{\"service\":\"\"}","timeout_milliseconds":5000,"enabled":false}`
 	data, statusCode := postJSONBody(t, "http://"+httpAddress+"/api/v1/scheduler/jobs/create", "Bearer "+token, createBody)
 	if statusCode != http.StatusOK {
 		t.Fatalf("create status=%d body=%s", statusCode, data)
@@ -126,10 +131,38 @@ func TestDynamicGRPCSchedulerEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	grpcCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
-	listed, err := schedulerv1.NewSchedulerServiceClient(connection).ListJobs(grpcCtx, &schedulerv1.ListJobsRequest{Page: 1, PageSize: 20})
+	listed, err := schedulerv1.NewSchedulerServiceClient(connection).ListJobs(grpcCtx, &schedulerv1.ListJobsRequest{TenantId: "tenant-1", ApplicationId: "application-1", Page: 1, PageSize: 20})
 	if err != nil || listed.GetTotal() != 1 {
 		t.Fatalf("ListJobs()=%v,%v", listed, err)
 	}
+}
+
+type allowApplicationServer struct {
+	applicationv1.UnimplementedApplicationServiceServer
+}
+
+func (allowApplicationServer) BatchCheckTenantApplications(_ context.Context, request *applicationv1.BatchCheckTenantApplicationsRequest) (*applicationv1.BatchCheckTenantApplicationsResponse, error) {
+	decisions := make([]*applicationv1.TenantApplicationDecision, 0, len(request.GetApplicationIds()))
+	for _, applicationID := range request.GetApplicationIds() {
+		decisions = append(decisions, &applicationv1.TenantApplicationDecision{ApplicationId: applicationID, Granted: true})
+	}
+	return &applicationv1.BatchCheckTenantApplicationsResponse{Decisions: decisions}, nil
+}
+
+func startAllowApplicationServer(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	applicationv1.RegisterApplicationServiceServer(server, allowApplicationServer{})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	return listener.Addr().String()
 }
 
 func freeAddress(t *testing.T) string {

@@ -18,7 +18,7 @@ type Repository interface {
 	UpdateJob(context.Context, sqlx.ExtContext, Job, int64) error
 	DeleteJob(context.Context, sqlx.ExtContext, string, int64, timeFields) error
 	GetJob(context.Context, string) (Job, error)
-	ListJobs(context.Context, string, int, int) ([]Job, int64, error)
+	ListJobs(context.Context, string, string, string, int, int) ([]Job, int64, error)
 	ListEnabled(context.Context) ([]Job, error)
 	CreateExecution(context.Context, sqlx.ExtContext, Execution) error
 	FinishExecution(context.Context, sqlx.ExtContext, Execution) error
@@ -35,11 +35,11 @@ type SQLRepository struct{ db *sqlx.DB }
 
 func NewRepository(db *sqlx.DB) Repository { return &SQLRepository{db: db} }
 
-const jobColumns = `id,name,cron_expression,timezone,upstream,full_method,request_json,timeout_milliseconds,status,version,created_at,updated_at,created_by,updated_by`
-const executionColumns = `id,job_id,trigger_type,status,response_json,error_code,error_message,started_at,finished_at,duration_milliseconds,version,created_at,updated_at,created_by,updated_by`
+const jobColumns = `id,tenant_id,application_id,name,cron_expression,timezone,upstream,full_method,request_json,timeout_milliseconds,status,version,created_at,updated_at,created_by,updated_by`
+const executionColumns = `id,job_id,tenant_id,application_id,trigger_type,status,response_json,error_code,error_message,started_at,finished_at,duration_milliseconds,version,created_at,updated_at,created_by,updated_by`
 
 func (r *SQLRepository) CreateJob(ctx context.Context, exec sqlx.ExtContext, value Job) error {
-	_, err := exec.ExecContext(ctx, r.db.Rebind(`INSERT INTO scheduled_jobs (`+jobColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), value.ID, value.Name, value.CronExpression, value.Timezone, value.Upstream, value.FullMethod, value.RequestJSON, value.TimeoutMilliseconds, value.Status, value.Version, value.CreatedAt, value.UpdatedAt, value.CreatedBy, value.UpdatedBy)
+	_, err := exec.ExecContext(ctx, r.db.Rebind(`INSERT INTO scheduled_jobs (`+jobColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), value.ID, value.TenantID, value.ApplicationID, value.Name, value.CronExpression, value.Timezone, value.Upstream, value.FullMethod, value.RequestJSON, value.TimeoutMilliseconds, value.Status, value.Version, value.CreatedAt, value.UpdatedAt, value.CreatedBy, value.UpdatedBy)
 	return err
 }
 func (r *SQLRepository) UpdateJob(ctx context.Context, exec sqlx.ExtContext, value Job, expected int64) error {
@@ -58,8 +58,8 @@ func (r *SQLRepository) GetJob(ctx context.Context, id string) (Job, error) {
 	}
 	return value, err
 }
-func (r *SQLRepository) ListJobs(ctx context.Context, status string, limit, offset int) ([]Job, int64, error) {
-	where, args := `status<>'deleted'`, []any{}
+func (r *SQLRepository) ListJobs(ctx context.Context, tenantID, applicationID, status string, limit, offset int) ([]Job, int64, error) {
+	where, args := `tenant_id=? AND application_id=? AND status<>'deleted'`, []any{tenantID, applicationID}
 	if status != "" {
 		where += ` AND status=?`
 		args = append(args, status)
@@ -75,11 +75,11 @@ func (r *SQLRepository) ListJobs(ctx context.Context, status string, limit, offs
 }
 func (r *SQLRepository) ListEnabled(ctx context.Context) ([]Job, error) {
 	values := []Job{}
-	err := r.db.SelectContext(ctx, &values, `SELECT `+jobColumns+` FROM scheduled_jobs WHERE status='enabled' ORDER BY id`)
+	err := r.db.SelectContext(ctx, &values, `SELECT `+jobColumns+` FROM scheduled_jobs WHERE tenant_id<>'' AND application_id<>'' AND status='enabled' ORDER BY id`)
 	return values, err
 }
 func (r *SQLRepository) CreateExecution(ctx context.Context, exec sqlx.ExtContext, value Execution) error {
-	_, err := exec.ExecContext(ctx, r.db.Rebind(`INSERT INTO job_executions (`+executionColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), value.ID, value.JobID, value.TriggerType, value.Status, value.ResponseJSON, value.ErrorCode, value.ErrorMessage, value.StartedAt, value.FinishedAt, value.DurationMilliseconds, value.Version, value.CreatedAt, value.UpdatedAt, value.CreatedBy, value.UpdatedBy)
+	_, err := exec.ExecContext(ctx, r.db.Rebind(`INSERT INTO job_executions (`+executionColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), value.ID, value.JobID, value.TenantID, value.ApplicationID, value.TriggerType, value.Status, value.ResponseJSON, value.ErrorCode, value.ErrorMessage, value.StartedAt, value.FinishedAt, value.DurationMilliseconds, value.Version, value.CreatedAt, value.UpdatedAt, value.CreatedBy, value.UpdatedBy)
 	return err
 }
 func (r *SQLRepository) FinishExecution(ctx context.Context, exec sqlx.ExtContext, value Execution) error {

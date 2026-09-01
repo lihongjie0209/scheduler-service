@@ -613,6 +613,9 @@ const docTemplate = `{
                 "upstream"
             ],
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "cron_expression": {
                     "type": "string"
                 },
@@ -626,6 +629,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_json": {
+                    "type": "string"
+                },
+                "tenant_id": {
                     "type": "string"
                 },
                 "timeout_milliseconds": {
@@ -724,7 +730,14 @@ const docTemplate = `{
         },
         "httptransport.ListJobsRequest": {
             "type": "object",
+            "required": [
+                "application_id",
+                "tenant_id"
+            ],
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "page": {
                     "type": "integer"
                 },
@@ -732,6 +745,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
                     "type": "string"
                 }
             }
@@ -771,6 +787,9 @@ const docTemplate = `{
                 "version"
             ],
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "cron_expression": {
                     "type": "string"
                 },
@@ -787,6 +806,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_json": {
+                    "type": "string"
+                },
+                "tenant_id": {
                     "type": "string"
                 },
                 "timeout_milliseconds": {
@@ -806,6 +828,9 @@ const docTemplate = `{
         "job.Execution": {
             "type": "object",
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -839,6 +864,9 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "tenant_id": {
+                    "type": "string"
+                },
                 "trigger_type": {
                     "type": "string"
                 },
@@ -856,6 +884,9 @@ const docTemplate = `{
         "job.Job": {
             "type": "object",
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -878,6 +909,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
                     "type": "string"
                 },
                 "timeout_milliseconds": {

@@ -72,14 +72,14 @@ func schedulerGRPCRequirement(enabled bool) platformauthz.GRPCResolver {
 			return platformauthz.Requirement{}, false
 		}
 		requirements := map[string]platformauthz.Requirement{
-			schedulerv1.SchedulerService_CreateJob_FullMethodName:      {Resource: "scheduler.job", Action: "create", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_UpdateJob_FullMethodName:      {Resource: "scheduler.job", Action: "update", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_DeleteJob_FullMethodName:      {Resource: "scheduler.job", Action: "delete", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_GetJob_FullMethodName:         {Resource: "scheduler.job", Action: "read", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_ListJobs_FullMethodName:       {Resource: "scheduler.job", Action: "list", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_TriggerJob_FullMethodName:     {Resource: "scheduler.job", Action: "trigger", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_GetExecution_FullMethodName:   {Resource: "scheduler.execution", Action: "read", Scope: platformauthz.ScopePlatform},
-			schedulerv1.SchedulerService_ListExecutions_FullMethodName: {Resource: "scheduler.execution", Action: "list", Scope: platformauthz.ScopePlatform},
+			schedulerv1.SchedulerService_CreateJob_FullMethodName:      {Resource: "scheduler.job", Action: "create", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_UpdateJob_FullMethodName:      {Resource: "scheduler.job", Action: "update", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_DeleteJob_FullMethodName:      {Resource: "scheduler.job", Action: "delete", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_GetJob_FullMethodName:         {Resource: "scheduler.job", Action: "read", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_ListJobs_FullMethodName:       {Resource: "scheduler.job", Action: "list", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_TriggerJob_FullMethodName:     {Resource: "scheduler.job", Action: "trigger", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_GetExecution_FullMethodName:   {Resource: "scheduler.execution", Action: "read", Scope: platformauthz.ScopeTenant},
+			schedulerv1.SchedulerService_ListExecutions_FullMethodName: {Resource: "scheduler.execution", Action: "list", Scope: platformauthz.ScopeTenant},
 		}
 		requirement, ok := requirements[method]
 		return requirement, ok
