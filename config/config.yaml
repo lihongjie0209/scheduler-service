@@ -143,7 +143,7 @@ outbound:
       auth: {type: "", token: ""}
       retry: {max_attempts: 2, initial_backoff: 100ms, max_backoff: 500ms, methods: [/platform.application.v1.ApplicationService/BatchCheckTenantApplications]}
       breaker: {enabled: true, failure_threshold: 5, open_timeout: 30s}
-      tls: {enabled: false, server_name: "", ca_file: "", cert_file: "", key_file: ""}
+      tls: {enabled: false, allow_insecure: false, server_name: "", ca_file: "", cert_file: "", key_file: ""}
     authorization:
       target: 127.0.0.1:9092
       timeout: 2s
