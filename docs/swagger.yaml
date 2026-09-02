@@ -68,17 +68,89 @@ definitions:
     - id
     - version
     type: object
-  httptransport.ExecutionPage:
+  httptransport.ExecutionBody:
+    properties:
+      application_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      duration_milliseconds:
+        type: integer
+      error_code:
+        type: string
+      error_message:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      job_id:
+        type: string
+      response_json:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+      trigger_type:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      version:
+        type: integer
+    type: object
+  httptransport.ExecutionPageBody:
     properties:
       items:
         items:
-          $ref: '#/definitions/job.Execution'
+          $ref: '#/definitions/httptransport.ExecutionBody'
         type: array
       page:
         type: integer
       page_size:
         type: integer
       total:
+        type: integer
+    type: object
+  httptransport.JobBody:
+    properties:
+      application_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      cron_expression:
+        type: string
+      full_method:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      request_json:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+      timeout_milliseconds:
+        type: integer
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      upstream:
+        type: string
+      version:
         type: integer
     type: object
   httptransport.JobIDRequest:
@@ -88,11 +160,11 @@ definitions:
     required:
     - id
     type: object
-  httptransport.JobPage:
+  httptransport.JobPageBody:
     properties:
       items:
         items:
-          $ref: '#/definitions/job.Job'
+          $ref: '#/definitions/httptransport.JobBody'
         type: array
       page:
         type: integer
@@ -178,78 +250,6 @@ definitions:
     - upstream
     - version
     type: object
-  job.Execution:
-    properties:
-      application_id:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: string
-      duration_milliseconds:
-        type: integer
-      error_code:
-        type: string
-      error_message:
-        type: string
-      finished_at:
-        type: string
-      id:
-        type: string
-      job_id:
-        type: string
-      response_json:
-        type: string
-      started_at:
-        type: string
-      status:
-        type: string
-      tenant_id:
-        type: string
-      trigger_type:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-      version:
-        type: integer
-    type: object
-  job.Job:
-    properties:
-      application_id:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: string
-      cron_expression:
-        type: string
-      full_method:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      request_json:
-        type: string
-      status:
-        type: string
-      tenant_id:
-        type: string
-      timeout_milliseconds:
-        type: integer
-      timezone:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-      upstream:
-        type: string
-      version:
-        type: integer
-    type: object
 info:
   contact: {}
   description: 'Production-oriented Go Web API scaffold. Application error codes:
@@ -302,7 +302,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/job.Execution'
+                  $ref: '#/definitions/httptransport.ExecutionBody'
               type: object
       security:
       - Bearer: []
@@ -330,7 +330,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/httptransport.ExecutionPage'
+                  $ref: '#/definitions/httptransport.ExecutionPageBody'
               type: object
       security:
       - Bearer: []
@@ -358,7 +358,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/job.Job'
+                  $ref: '#/definitions/httptransport.JobBody'
               type: object
       security:
       - Bearer: []
@@ -409,7 +409,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/job.Job'
+                  $ref: '#/definitions/httptransport.JobBody'
               type: object
       security:
       - Bearer: []
@@ -437,7 +437,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/httptransport.JobPage'
+                  $ref: '#/definitions/httptransport.JobPageBody'
               type: object
       security:
       - Bearer: []
@@ -465,7 +465,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/job.Execution'
+                  $ref: '#/definitions/httptransport.ExecutionBody'
               type: object
       security:
       - Bearer: []
@@ -493,7 +493,7 @@ paths:
             - $ref: '#/definitions/httptransport.Response'
             - properties:
                 body:
-                  $ref: '#/definitions/job.Job'
+                  $ref: '#/definitions/httptransport.JobBody'
               type: object
       security:
       - Bearer: []

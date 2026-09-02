@@ -117,18 +117,6 @@ type ListExecutionsRequest struct {
 	Page     int    `json:"page"`
 	PageSize int    `json:"page_size"`
 }
-type JobPage struct {
-	Items    []job.Job `json:"items"`
-	Total    int64     `json:"total"`
-	Page     int       `json:"page"`
-	PageSize int       `json:"page_size"`
-}
-type ExecutionPage struct {
-	Items    []job.Execution `json:"items"`
-	Total    int64           `json:"total"`
-	Page     int             `json:"page"`
-	PageSize int             `json:"page_size"`
-}
 
 func input(request JobInput) job.Input {
 	return job.Input{TenantID: request.TenantID, ApplicationID: request.ApplicationID, Name: request.Name, CronExpression: request.CronExpression, Timezone: request.Timezone, Upstream: request.Upstream, FullMethod: request.FullMethod, RequestJSON: request.RequestJSON, TimeoutMilliseconds: request.TimeoutMilliseconds, Enabled: request.Enabled}
@@ -148,7 +136,7 @@ func (h *Handler) bind(c *gin.Context, request any) bool {
 // @Produce json
 // @Security Bearer
 // @Param request body CreateJobRequest true "Job"
-// @Success 200 {object} Response{body=job.Job}
+// @Success 200 {object} Response{body=JobBody}
 // @Router /api/v1/scheduler/jobs/create [post]
 func (h *Handler) CreateJob(c *gin.Context) {
 	var request CreateJobRequest
@@ -160,7 +148,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, jobBody(value))
 }
 
 // UpdateJob godoc
@@ -170,7 +158,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body UpdateJobRequest true "Job and expected version"
-// @Success 200 {object} Response{body=job.Job}
+// @Success 200 {object} Response{body=JobBody}
 // @Router /api/v1/scheduler/jobs/update [post]
 func (h *Handler) UpdateJob(c *gin.Context) {
 	var request UpdateJobRequest
@@ -182,7 +170,7 @@ func (h *Handler) UpdateJob(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, jobBody(value))
 }
 
 // DeleteJob godoc
@@ -213,7 +201,7 @@ func (h *Handler) DeleteJob(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body JobIDRequest true "Job ID"
-// @Success 200 {object} Response{body=job.Job}
+// @Success 200 {object} Response{body=JobBody}
 // @Router /api/v1/scheduler/jobs/get [post]
 func (h *Handler) GetJob(c *gin.Context) {
 	var request JobIDRequest
@@ -225,7 +213,7 @@ func (h *Handler) GetJob(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, jobBody(value))
 }
 
 // ListJobs godoc
@@ -235,7 +223,7 @@ func (h *Handler) GetJob(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body ListJobsRequest true "Filter and pagination"
-// @Success 200 {object} Response{body=JobPage}
+// @Success 200 {object} Response{body=JobPageBody}
 // @Router /api/v1/scheduler/jobs/list [post]
 func (h *Handler) ListJobs(c *gin.Context) {
 	var request ListJobsRequest
@@ -247,7 +235,7 @@ func (h *Handler) ListJobs(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, jobPageBody(value))
 }
 
 // TriggerJob godoc
@@ -257,7 +245,7 @@ func (h *Handler) ListJobs(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body JobIDRequest true "Job ID"
-// @Success 200 {object} Response{body=job.Execution}
+// @Success 200 {object} Response{body=ExecutionBody}
 // @Router /api/v1/scheduler/jobs/trigger [post]
 func (h *Handler) TriggerJob(c *gin.Context) {
 	var request JobIDRequest
@@ -269,7 +257,7 @@ func (h *Handler) TriggerJob(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, executionBody(value))
 }
 
 // GetExecution godoc
@@ -279,7 +267,7 @@ func (h *Handler) TriggerJob(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body JobIDRequest true "Execution ID"
-// @Success 200 {object} Response{body=job.Execution}
+// @Success 200 {object} Response{body=ExecutionBody}
 // @Router /api/v1/scheduler/executions/get [post]
 func (h *Handler) GetExecution(c *gin.Context) {
 	var request JobIDRequest
@@ -291,7 +279,7 @@ func (h *Handler) GetExecution(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, executionBody(value))
 }
 
 // ListExecutions godoc
@@ -301,7 +289,7 @@ func (h *Handler) GetExecution(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body ListExecutionsRequest true "Job ID and pagination"
-// @Success 200 {object} Response{body=ExecutionPage}
+// @Success 200 {object} Response{body=ExecutionPageBody}
 // @Router /api/v1/scheduler/executions/list [post]
 func (h *Handler) ListExecutions(c *gin.Context) {
 	var request ListExecutionsRequest
@@ -313,5 +301,5 @@ func (h *Handler) ListExecutions(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, executionPageBody(value))
 }
