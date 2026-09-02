@@ -77,6 +77,16 @@ func TestConfig_OutboundPSKRequiresTLSOrExplicitDevelopmentOptIn(t *testing.T) {
 	}
 }
 
+func TestProductionProfileAuthenticatesApplicationGrantChecks(t *testing.T) {
+	content, err := os.ReadFile("../../config/config-production.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), `auth: {type: psk, token: ""}`) {
+		t.Fatal("production application upstream does not require an injected PSK")
+	}
+}
+
 func TestLoad_ExecutionRetentionEnvironmentOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("http:\n  address: 127.0.0.1:8080\n"), 0o600); err != nil {
