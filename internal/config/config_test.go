@@ -27,6 +27,25 @@ func TestLoad_EnvironmentOverridesFile(t *testing.T) {
 	}
 }
 
+func TestLoad_IdempotencyRouteEnvironmentOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("idempotency:\n  http_paths: [/api/v1/old]\n  grpc_methods: [/old.Service/Create]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APP_IDEMPOTENCY_HTTP_PATHS", "[/api/v1/scheduler/jobs/create, /api/v1/scheduler/jobs/trigger]")
+	t.Setenv("APP_IDEMPOTENCY_GRPC_METHODS", "[/platform.scheduler.v1.SchedulerService/TriggerJob]")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Idempotency.HTTPPaths, ","); got != "/api/v1/scheduler/jobs/create,/api/v1/scheduler/jobs/trigger" {
+		t.Fatalf("HTTPPaths=%q", got)
+	}
+	if got := strings.Join(cfg.Idempotency.GRPCMethods, ","); got != "/platform.scheduler.v1.SchedulerService/TriggerJob" {
+		t.Fatalf("GRPCMethods=%q", got)
+	}
+}
+
 func TestConfig_ValidateAuthorizationDependency(t *testing.T) {
 	t.Parallel()
 	cfg := Config{

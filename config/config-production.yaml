@@ -38,6 +38,8 @@ rate_limit:
   enabled: true
 idempotency:
   enabled: true
+  http_paths: [/api/v1/scheduler/jobs/create, /api/v1/scheduler/jobs/update, /api/v1/scheduler/jobs/delete, /api/v1/scheduler/jobs/trigger]
+  grpc_methods: [/platform.scheduler.v1.SchedulerService/CreateJob, /platform.scheduler.v1.SchedulerService/UpdateJob, /platform.scheduler.v1.SchedulerService/DeleteJob, /platform.scheduler.v1.SchedulerService/TriggerJob]
 observability:
   metrics_enabled: true
   tracing_enabled: false
