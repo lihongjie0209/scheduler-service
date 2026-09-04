@@ -101,7 +101,7 @@ func TestDynamicGRPCSchedulerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	createBody := `{"tenant_id":"tenant-1","application_id":"application-1","name":"health","cron_expression":"0 0 0 * * *","timezone":"Asia/Shanghai","upstream":"health","full_method":"/grpc.health.v1.Health/Check","request_json":"{\"service\":\"\"}","timeout_milliseconds":5000,"enabled":false}`
+	createBody := `{"tenant_id":"tenant-1","application_id":"application-1","name":"health","cron_expression":"0 0 0 * * *","timezone":"Asia/Shanghai","upstream":"health","full_method":"/grpc.health.v1.Health/Check","request_json":"{\"service\":\"\"}","timeout_milliseconds":5000,"enabled":true}`
 	data, statusCode := postJSONBody(t, "http://"+httpAddress+"/api/v1/scheduler/jobs/create", "Bearer "+token, createBody)
 	if statusCode != http.StatusOK {
 		t.Fatalf("create status=%d body=%s", statusCode, data)
