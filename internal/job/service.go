@@ -151,7 +151,10 @@ func (s *Service) List(ctx context.Context, tenantID, applicationID, statusValue
 	values, total, err := s.repository.ListJobs(ctx, strings.TrimSpace(tenantID), strings.TrimSpace(applicationID), statusValue, pageSize, (page-1)*pageSize)
 	return Page[Job]{Items: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
 }
-func (s *Service) Trigger(ctx context.Context, id string) (Execution, error) {
+func (s *Service) Trigger(ctx context.Context, id string, expected int64) (Execution, error) {
+	if expected < 1 {
+		return Execution{}, apperror.Invalid("version must be positive", nil)
+	}
 	actor, err := actorFromContext(ctx)
 	if err != nil {
 		return Execution{}, err
@@ -163,15 +166,28 @@ func (s *Service) Trigger(ctx context.Context, id string) (Execution, error) {
 	if err := s.authorizeScope(ctx, value.TenantID, value.ApplicationID); err != nil {
 		return Execution{}, err
 	}
-	return s.execute(ctx, value, "manual", actor)
+	if err := validateManualTrigger(value, expected); err != nil {
+		return Execution{}, err
+	}
+	return s.execute(ctx, value, "manual", actor, expected)
+}
+
+func validateManualTrigger(value Job, expected int64) error {
+	if value.Version != expected {
+		return translate(ErrStaleVersion)
+	}
+	if value.Status != "enabled" {
+		return apperror.Conflict("scheduled job is not enabled", nil)
+	}
+	return nil
 }
 func (s *Service) ExecuteScheduled(ctx context.Context, value Job) (Execution, error) {
 	if err := s.verifyApplication(ctx, value.TenantID, value.ApplicationID); err != nil {
 		return Execution{}, err
 	}
-	return s.execute(ctx, value, "scheduled", "scheduler-service")
+	return s.execute(ctx, value, "scheduled", "scheduler-service", 0)
 }
-func (s *Service) execute(parent context.Context, value Job, triggerType, actor string) (Execution, error) {
+func (s *Service) execute(parent context.Context, value Job, triggerType, actor string, expectedVersion int64) (Execution, error) {
 	if s.locker == nil {
 		return Execution{}, apperror.Unavailable("distributed scheduler lock is unavailable", nil)
 	}
@@ -192,7 +208,12 @@ func (s *Service) execute(parent context.Context, value Job, triggerType, actor 
 	}()
 	started := s.now()
 	execution := Execution{ID: uuid.NewString(), JobID: value.ID, TenantID: value.TenantID, ApplicationID: value.ApplicationID, TriggerType: triggerType, Status: "running", StartedAt: started, Version: 1, CreatedAt: started, UpdatedAt: started, CreatedBy: actor, UpdatedBy: actor}
-	if err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error { return s.repository.CreateExecution(ctx, tx, execution) }); err != nil {
+	if err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
+		if triggerType == "manual" {
+			return s.repository.CreateManualExecution(ctx, tx, execution, expectedVersion)
+		}
+		return s.repository.CreateExecution(ctx, tx, execution)
+	}); err != nil {
 		return Execution{}, translate(err)
 	}
 	ctx = idempotency.WithContext(ctx, execution.ID)

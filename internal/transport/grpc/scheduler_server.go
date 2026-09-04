@@ -60,7 +60,7 @@ func (s *schedulerServer) ListJobs(ctx context.Context, request *schedulerv1.Lis
 	return &schedulerv1.ListJobsResponse{Items: items, Total: page.Total, Page: int32(page.Page), PageSize: int32(page.PageSize)}, nil
 }
 func (s *schedulerServer) TriggerJob(ctx context.Context, request *schedulerv1.TriggerJobRequest) (*schedulerv1.TriggerJobResponse, error) {
-	value, err := s.jobs.Trigger(ctx, request.GetId())
+	value, err := s.jobs.Trigger(ctx, request.GetId(), request.GetExpectedVersion())
 	if err != nil {
 		return nil, grpcError(err)
 	}

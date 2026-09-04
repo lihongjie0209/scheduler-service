@@ -18,7 +18,7 @@ require (
 	github.com/jhump/protoreflect v1.17.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lihongjie0209/microservice-platform-go v0.11.0
-	github.com/lihongjie0209/platform-protos v0.37.0
+	github.com/lihongjie0209/platform-protos v0.55.1-0.20260904031654-82c233c1711a
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.22.0
 	github.com/redis/go-redis/v9 v9.22.0

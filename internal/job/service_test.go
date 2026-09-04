@@ -82,6 +82,48 @@ func TestStatusFromEnabled(t *testing.T) {
 	}
 }
 
+func TestValidateManualTrigger(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		job      Job
+		expected int64
+		wantCode int
+	}{
+		{name: "enabled current version", job: Job{Status: "enabled", Version: 3}, expected: 3},
+		{name: "stale version", job: Job{Status: "enabled", Version: 4}, expected: 3, wantCode: apperror.CodeConflict},
+		{name: "disabled job", job: Job{Status: "disabled", Version: 3}, expected: 3, wantCode: apperror.CodeConflict},
+		{name: "deleted job", job: Job{Status: "deleted", Version: 3}, expected: 3, wantCode: apperror.CodeConflict},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateManualTrigger(test.job, test.expected)
+			if test.wantCode == 0 {
+				if err != nil {
+					t.Fatalf("validateManualTrigger() error = %v", err)
+				}
+				return
+			}
+			var appErr *apperror.Error
+			if !errors.As(err, &appErr) || appErr.Code != test.wantCode {
+				t.Fatalf("validateManualTrigger() error = %v, want code %d", err, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestTriggerRejectsMissingExpectedVersionBeforeDependencies(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil, nil, nil)
+	_, err := service.Trigger(t.Context(), "job-1", 0)
+	var appErr *apperror.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperror.CodeInvalidArgument {
+		t.Fatalf("Trigger() error = %v, want invalid argument", err)
+	}
+}
+
 func TestAuthorizeScopeEnforcesTenantAndApplicationGrant(t *testing.T) {
 	t.Parallel()
 

@@ -21,6 +21,7 @@ type Repository interface {
 	ListJobs(context.Context, string, string, string, int, int) ([]Job, int64, error)
 	ListEnabled(context.Context) ([]Job, error)
 	CreateExecution(context.Context, sqlx.ExtContext, Execution) error
+	CreateManualExecution(context.Context, sqlx.ExtContext, Execution, int64) error
 	FinishExecution(context.Context, sqlx.ExtContext, Execution) error
 	GetExecution(context.Context, string) (Execution, error)
 	ListExecutions(context.Context, string, int, int) ([]Execution, int64, error)
@@ -81,6 +82,35 @@ func (r *SQLRepository) ListEnabled(ctx context.Context) ([]Job, error) {
 func (r *SQLRepository) CreateExecution(ctx context.Context, exec sqlx.ExtContext, value Execution) error {
 	_, err := exec.ExecContext(ctx, r.db.Rebind(`INSERT INTO job_executions (`+executionColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`), value.ID, value.JobID, value.TenantID, value.ApplicationID, value.TriggerType, value.Status, value.ResponseJSON, value.ErrorCode, value.ErrorMessage, value.StartedAt, value.FinishedAt, value.DurationMilliseconds, value.Version, value.CreatedAt, value.UpdatedAt, value.CreatedBy, value.UpdatedBy)
 	return err
+}
+
+func (r *SQLRepository) CreateManualExecution(
+	ctx context.Context,
+	exec sqlx.ExtContext,
+	value Execution,
+	expectedVersion int64,
+) error {
+	var current struct {
+		Version int64  `db:"version"`
+		Status  string `db:"status"`
+	}
+	err := sqlx.GetContext(
+		ctx,
+		exec,
+		&current,
+		r.db.Rebind(`SELECT version,status FROM scheduled_jobs WHERE id=? AND status<>'deleted' FOR UPDATE`),
+		value.JobID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if current.Version != expectedVersion || current.Status != "enabled" {
+		return ErrStaleVersion
+	}
+	return r.CreateExecution(ctx, exec, value)
 }
 func (r *SQLRepository) FinishExecution(ctx context.Context, exec sqlx.ExtContext, value Execution) error {
 	result, err := exec.ExecContext(ctx, r.db.Rebind(`UPDATE job_executions SET status=?,response_json=?,error_code=?,error_message=?,finished_at=?,duration_milliseconds=?,version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=?`), value.Status, value.ResponseJSON, value.ErrorCode, value.ErrorMessage, value.FinishedAt, value.DurationMilliseconds, value.UpdatedAt, value.UpdatedBy, value.ID, value.Version)

@@ -105,6 +105,10 @@ type DeleteJobRequest struct {
 type JobIDRequest struct {
 	ID string `json:"id" binding:"required"`
 }
+type TriggerJobRequest struct {
+	ID              string `json:"id" binding:"required"`
+	ExpectedVersion int64  `json:"expected_version" binding:"required,gt=0"`
+}
 type ListJobsRequest struct {
 	TenantID      string `json:"tenant_id" binding:"required"`
 	ApplicationID string `json:"application_id" binding:"required"`
@@ -244,15 +248,15 @@ func (h *Handler) ListJobs(c *gin.Context) {
 // @Security Bearer
 // @Accept json
 // @Produce json
-// @Param request body JobIDRequest true "Job ID"
+// @Param request body TriggerJobRequest true "Job ID and expected version"
 // @Success 200 {object} Response{body=ExecutionBody}
 // @Router /api/v1/scheduler/jobs/trigger [post]
 func (h *Handler) TriggerJob(c *gin.Context) {
-	var request JobIDRequest
+	var request TriggerJobRequest
 	if !h.bind(c, &request) {
 		return
 	}
-	value, err := h.jobs.Trigger(c.Request.Context(), request.ID)
+	value, err := h.jobs.Trigger(c.Request.Context(), request.ID, request.ExpectedVersion)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return

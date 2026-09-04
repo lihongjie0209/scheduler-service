@@ -215,6 +215,16 @@ definitions:
       request_id:
         type: string
     type: object
+  httptransport.TriggerJobRequest:
+    properties:
+      expected_version:
+        type: integer
+      id:
+        type: string
+    required:
+    - expected_version
+    - id
+    type: object
   httptransport.UpdateJobRequest:
     properties:
       application_id:
@@ -449,12 +459,12 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Job ID
+      - description: Job ID and expected version
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/httptransport.JobIDRequest'
+          $ref: '#/definitions/httptransport.TriggerJobRequest'
       produces:
       - application/json
       responses:

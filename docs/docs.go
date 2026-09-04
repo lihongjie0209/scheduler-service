@@ -364,12 +364,12 @@ const docTemplate = `{
                 "summary": "Trigger a job immediately",
                 "parameters": [
                     {
-                        "description": "Job ID",
+                        "description": "Job ID and expected version",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httptransport.JobIDRequest"
+                            "$ref": "#/definitions/httptransport.TriggerJobRequest"
                         }
                     }
                 ],
@@ -880,6 +880,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "httptransport.TriggerJobRequest": {
+            "type": "object",
+            "required": [
+                "expected_version",
+                "id"
+            ],
+            "properties": {
+                "expected_version": {
+                    "type": "integer"
+                },
+                "id": {
                     "type": "string"
                 }
             }

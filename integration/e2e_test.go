@@ -114,7 +114,7 @@ func TestDynamicGRPCSchedulerEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(data, &created); err != nil || created.Body.ID == "" {
 		t.Fatalf("created=%+v err=%v", created, err)
 	}
-	data, statusCode = postJSONBody(t, "http://"+httpAddress+"/api/v1/scheduler/jobs/trigger", "Bearer "+token, `{"id":"`+created.Body.ID+`"}`)
+	data, statusCode = postJSONBody(t, "http://"+httpAddress+"/api/v1/scheduler/jobs/trigger", "Bearer "+token, `{"id":"`+created.Body.ID+`","expected_version":1}`)
 	if statusCode != http.StatusOK {
 		t.Fatalf("trigger status=%d body=%s", statusCode, data)
 	}
