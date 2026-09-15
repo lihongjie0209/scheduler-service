@@ -34,7 +34,10 @@ func TestDynamicInvoker_ReflectionJSONInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	invoker := &DynamicInvoker{registry: fakeConnections{connection: connection}}
+	invoker, err := newDynamicInvoker(fakeConnections{connection: connection})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := invoker.Validate(t.Context(), "health", "/grpc.health.v1.Health/Check", `{"service":""}`); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -49,7 +52,10 @@ func TestDynamicInvoker_ReflectionJSONInvocation(t *testing.T) {
 
 func TestDynamicInvoker_RejectsInvalidTargets(t *testing.T) {
 	t.Parallel()
-	invoker := &DynamicInvoker{registry: fakeConnections{}}
+	invoker, err := newDynamicInvoker(fakeConnections{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct{ name, upstream, method string }{{name: "unknown upstream", upstream: "missing", method: "/grpc.health.v1.Health/Check"}, {name: "invalid method", upstream: "health", method: "Health"}} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
