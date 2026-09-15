@@ -182,10 +182,17 @@ func validateManualTrigger(value Job, expected int64) error {
 	return nil
 }
 func (s *Service) ExecuteScheduled(ctx context.Context, value Job) (Execution, error) {
-	if err := s.verifyApplication(ctx, value.TenantID, value.ApplicationID); err != nil {
+	current, err := s.repository.GetJob(ctx, value.ID)
+	if err != nil {
+		return Execution{}, translate(err)
+	}
+	if current.Version != value.Version || current.Status != "enabled" {
+		return Execution{}, apperror.Conflict("scheduled job definition changed before execution", ErrStaleVersion)
+	}
+	if err := s.verifyApplication(ctx, current.TenantID, current.ApplicationID); err != nil {
 		return Execution{}, err
 	}
-	return s.execute(ctx, value, "scheduled", "scheduler-service", 0)
+	return s.execute(ctx, current, "scheduled", "scheduler-service", 0)
 }
 func (s *Service) execute(parent context.Context, value Job, triggerType, actor string, expectedVersion int64) (Execution, error) {
 	if s.locker == nil {

@@ -3,8 +3,11 @@ package job
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jmoiron/sqlx"
 	"github.com/lihongjie0209/microservice-platform-go/appaccess"
 	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
@@ -174,5 +177,29 @@ func TestCreateAuthorizesScopeBeforeInspectingDynamicTarget(t *testing.T) {
 	}
 	if invoker.validateCalls != 0 {
 		t.Fatalf("dynamic target inspected %d times before authorization", invoker.validateCalls)
+	}
+}
+
+func TestExecuteScheduledRejectsStaleLoadedDefinition(t *testing.T) {
+	database, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	db := sqlx.NewDb(database, "sqlmock")
+	service := NewService(&SQLRepository{db: db}, nil, nil, nil)
+	loaded := Job{ID: "job-1", TenantID: "tenant-1", ApplicationID: "application-1", Status: "enabled", Version: 4}
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT ` + jobColumns + ` FROM scheduled_jobs WHERE id=? AND status<>'deleted'`)).
+		WithArgs(loaded.ID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "application_id", "name", "cron_expression", "timezone", "upstream", "full_method", "request_json", "timeout_milliseconds", "status", "version", "created_at", "updated_at", "created_by", "updated_by"}).
+			AddRow(loaded.ID, loaded.TenantID, loaded.ApplicationID, "updated", "0 0 2 * * *", "Asia/Shanghai", "reporting", "/platform.reporting.v1.Reporting/Generate", `{}`, 5000, loaded.Status, loaded.Version, service.now(), service.now(), "user-1", "user-1"))
+
+	_, err = service.ExecuteScheduled(t.Context(), Job{ID: loaded.ID, Version: 3})
+	var appErr *apperror.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperror.CodeConflict {
+		t.Fatalf("ExecuteScheduled() error = %v, want conflict", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
