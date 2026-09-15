@@ -826,7 +826,22 @@ const docTemplate = `{
                 "job_id"
             ],
             "properties": {
+                "duration_max_milliseconds": {
+                    "type": "integer"
+                },
+                "duration_min_milliseconds": {
+                    "type": "integer"
+                },
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "job_id": {
+                    "type": "string"
+                },
+                "keyword": {
                     "type": "string"
                 },
                 "page": {
@@ -834,6 +849,24 @@ const docTemplate = `{
                 },
                 "page_size": {
                     "type": "integer"
+                },
+                "started_from": {
+                    "type": "string"
+                },
+                "started_to": {
+                    "type": "string"
+                },
+                "statuses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "trigger_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -847,6 +880,21 @@ const docTemplate = `{
                 "application_id": {
                     "type": "string"
                 },
+                "created_from": {
+                    "type": "string"
+                },
+                "created_to": {
+                    "type": "string"
+                },
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "keyword": {
+                    "type": "string"
+                },
                 "page": {
                     "type": "integer"
                 },
@@ -856,8 +904,20 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "statuses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "tenant_id": {
                     "type": "string"
+                },
+                "upstreams": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

@@ -75,6 +75,10 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.UpdateJob(auditCtx, tx, loaded, 1) }); err != nil {
 				t.Fatal(err)
 			}
+			jobs, total, err := repository.ListJobs(auditCtx, job.JobFilter{TenantID: created.TenantID, ApplicationID: created.ApplicationID, Keyword: "HEALTH-UP", IDs: []string{created.ID}, Statuses: []string{"enabled"}, Upstreams: []string{"health"}, CreatedFrom: timePointer(now.Add(-time.Hour)), CreatedTo: timePointer(now.Add(time.Hour))}, 20, 0)
+			if err != nil || total != 1 || len(jobs) != 1 || jobs[0].ID != created.ID {
+				t.Fatalf("filtered ListJobs()=%+v total=%d err=%v", jobs, total, err)
+			}
 			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.UpdateJob(auditCtx, tx, loaded, 1) }); err != job.ErrStaleVersion {
 				t.Fatalf("stale update error=%v", err)
 			}
@@ -83,13 +87,18 @@ func TestRepositoryAndMigrations(t *testing.T) {
 				t.Fatal(err)
 			}
 			finished := now.Add(time.Second)
-			execution.Status, execution.FinishedAt, execution.UpdatedAt = "succeeded", &finished, finished
+			execution.Status, execution.FinishedAt, execution.UpdatedAt, execution.DurationMilliseconds = "succeeded", &finished, finished, 1000
 			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.FinishExecution(auditCtx, tx, execution) }); err != nil {
 				t.Fatal(err)
 			}
 			loadedExecution, err := repository.GetExecution(ctx, execution.ID)
 			if err != nil || loadedExecution.Status != "succeeded" {
 				t.Fatalf("GetExecution()=%+v,%v", loadedExecution, err)
+			}
+			minimum, maximum := int64(900), int64(1100)
+			executions, total, err := repository.ListExecutions(auditCtx, job.ExecutionFilter{JobID: created.ID, IDs: []string{execution.ID}, Statuses: []string{"succeeded"}, TriggerTypes: []string{"manual"}, StartedFrom: timePointer(now.Add(-time.Hour)), StartedTo: timePointer(now.Add(time.Hour)), DurationMinMilliseconds: &minimum, DurationMaxMilliseconds: &maximum}, 20, 0)
+			if err != nil || total != 1 || len(executions) != 1 || executions[0].ID != execution.ID {
+				t.Fatalf("filtered ListExecutions()=%+v total=%d err=%v", executions, total, err)
 			}
 			cleanupAt := finished.Add(time.Hour)
 			var cleaned int64
@@ -134,6 +143,17 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if userTables != 0 {
 				t.Fatal("generic template migration must not create a users table")
 			}
+			var filterIndexes int
+			if databaseType == "postgres" {
+				if err := db.GetContext(ctx, &filterIndexes, `SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('scheduled_jobs_scope_created_idx','scheduled_jobs_scope_upstream_created_idx','scheduled_jobs_scope_status_created_idx','job_executions_job_status_started_idx')`); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := db.GetContext(ctx, &filterIndexes, `SELECT count(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema=DATABASE() AND index_name IN ('scheduled_jobs_scope_created_idx','scheduled_jobs_scope_upstream_created_idx','scheduled_jobs_scope_status_created_idx','job_executions_job_status_started_idx')`); err != nil {
+				t.Fatal(err)
+			}
+			if filterIndexes != 4 {
+				t.Fatalf("filter indexes=%d, want 4", filterIndexes)
+			}
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -143,6 +163,8 @@ func TestRepositoryAndMigrations(t *testing.T) {
 		})
 	}
 }
+
+func timePointer(value time.Time) *time.Time { return &value }
 
 func startDatabase(t *testing.T, ctx context.Context, databaseType string) (string, string) {
 	t.Helper()

@@ -64,3 +64,26 @@ type Input struct {
 	TimeoutMilliseconds int64
 	Enabled             bool
 }
+
+type JobFilter struct {
+	TenantID      string
+	ApplicationID string
+	Keyword       string
+	IDs           []string
+	Statuses      []string
+	Upstreams     []string
+	CreatedFrom   *time.Time
+	CreatedTo     *time.Time
+}
+
+type ExecutionFilter struct {
+	JobID                   string
+	Keyword                 string
+	IDs                     []string
+	Statuses                []string
+	TriggerTypes            []string
+	StartedFrom             *time.Time
+	StartedTo               *time.Time
+	DurationMinMilliseconds *int64
+	DurationMaxMilliseconds *int64
+}

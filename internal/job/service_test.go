@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
@@ -201,5 +202,41 @@ func TestExecuteScheduledRejectsStaleLoadedDefinition(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNormalizeJobFilterBoundsEnumsAndRange(t *testing.T) {
+	t.Parallel()
+	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	filter, err := normalizeJobFilter(JobFilter{Keyword: " report ", IDs: []string{"job-1", "job-1"}, Statuses: []string{"ENABLED"}, Upstreams: []string{"billing"}, CreatedFrom: &from, CreatedTo: &to})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filter.Keyword != "report" || len(filter.IDs) != 1 || len(filter.Statuses) != 1 || filter.Statuses[0] != "enabled" {
+		t.Fatalf("normalized filter = %+v", filter)
+	}
+	tooMany := make([]string, 101)
+	for index := range tooMany {
+		tooMany[index] = "job"
+	}
+	for _, invalid := range []JobFilter{{IDs: tooMany}, {Statuses: []string{"deleted"}}, {CreatedFrom: &to, CreatedTo: &from}} {
+		if _, err := normalizeJobFilter(invalid); err == nil {
+			t.Fatalf("normalizeJobFilter(%+v) error = nil", invalid)
+		}
+	}
+}
+
+func TestNormalizeExecutionFilterDurationAndEnums(t *testing.T) {
+	t.Parallel()
+	minimum, maximum := int64(10), int64(20)
+	if _, err := normalizeExecutionFilter(ExecutionFilter{Statuses: []string{"SUCCEEDED"}, TriggerTypes: []string{"manual"}, DurationMinMilliseconds: &minimum, DurationMaxMilliseconds: &maximum}); err != nil {
+		t.Fatal(err)
+	}
+	negative, smaller := int64(-1), int64(5)
+	for _, invalid := range []ExecutionFilter{{Statuses: []string{"unknown"}}, {TriggerTypes: []string{"retry"}}, {DurationMinMilliseconds: &negative}, {DurationMinMilliseconds: &maximum, DurationMaxMilliseconds: &smaller}} {
+		if _, err := normalizeExecutionFilter(invalid); err == nil {
+			t.Fatalf("normalizeExecutionFilter(%+v) error = nil", invalid)
+		}
 	}
 }

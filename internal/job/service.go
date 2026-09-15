@@ -137,19 +137,20 @@ func (s *Service) Get(ctx context.Context, id string) (Job, error) {
 	}
 	return value, nil
 }
-func (s *Service) List(ctx context.Context, tenantID, applicationID, statusValue string, page, pageSize int) (Page[Job], error) {
-	if err := s.authorizeScope(ctx, tenantID, applicationID); err != nil {
+func (s *Service) List(ctx context.Context, filter JobFilter, page, pageSize int) (Page[Job], error) {
+	filter.TenantID, filter.ApplicationID = strings.TrimSpace(filter.TenantID), strings.TrimSpace(filter.ApplicationID)
+	if err := s.authorizeScope(ctx, filter.TenantID, filter.ApplicationID); err != nil {
 		return Page[Job]{}, err
 	}
 	page, pageSize, err := pagination(page, pageSize)
 	if err != nil {
 		return Page[Job]{}, err
 	}
-	statusValue = strings.ToLower(strings.TrimSpace(statusValue))
-	if statusValue != "" && statusValue != "enabled" && statusValue != "disabled" {
-		return Page[Job]{}, apperror.Invalid("status must be enabled or disabled", nil)
+	filter, err = normalizeJobFilter(filter)
+	if err != nil {
+		return Page[Job]{}, err
 	}
-	values, total, err := s.repository.ListJobs(ctx, strings.TrimSpace(tenantID), strings.TrimSpace(applicationID), statusValue, pageSize, (page-1)*pageSize)
+	values, total, err := s.repository.ListJobs(ctx, filter, pageSize, (page-1)*pageSize)
 	return Page[Job]{Items: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
 }
 func (s *Service) Trigger(ctx context.Context, id string, expected int64) (Execution, error) {
@@ -266,8 +267,9 @@ func (s *Service) GetExecution(ctx context.Context, id string) (Execution, error
 	}
 	return value, nil
 }
-func (s *Service) ListExecutions(ctx context.Context, jobID string, page, pageSize int) (Page[Execution], error) {
-	value, err := s.repository.GetJob(ctx, strings.TrimSpace(jobID))
+func (s *Service) ListExecutions(ctx context.Context, filter ExecutionFilter, page, pageSize int) (Page[Execution], error) {
+	filter.JobID = strings.TrimSpace(filter.JobID)
+	value, err := s.repository.GetJob(ctx, filter.JobID)
 	if err != nil {
 		return Page[Execution]{}, translate(err)
 	}
@@ -278,8 +280,92 @@ func (s *Service) ListExecutions(ctx context.Context, jobID string, page, pageSi
 	if err != nil {
 		return Page[Execution]{}, err
 	}
-	values, total, err := s.repository.ListExecutions(ctx, strings.TrimSpace(jobID), pageSize, (page-1)*pageSize)
+	filter, err = normalizeExecutionFilter(filter)
+	if err != nil {
+		return Page[Execution]{}, err
+	}
+	values, total, err := s.repository.ListExecutions(ctx, filter, pageSize, (page-1)*pageSize)
 	return Page[Execution]{Items: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
+}
+
+func normalizeJobFilter(filter JobFilter) (JobFilter, error) {
+	filter.Keyword = strings.TrimSpace(filter.Keyword)
+	if len(filter.Keyword) > 200 {
+		return JobFilter{}, apperror.Invalid("keyword must not exceed 200 bytes", nil)
+	}
+	var err error
+	if filter.IDs, err = normalizeSet(filter.IDs, nil); err != nil {
+		return JobFilter{}, err
+	}
+	if filter.Statuses, err = normalizeSet(filter.Statuses, map[string]struct{}{"enabled": {}, "disabled": {}}); err != nil {
+		return JobFilter{}, apperror.Invalid("statuses must contain enabled or disabled", err)
+	}
+	if filter.Upstreams, err = normalizeSet(filter.Upstreams, nil); err != nil {
+		return JobFilter{}, err
+	}
+	if err := validateRange(filter.CreatedFrom, filter.CreatedTo, "created"); err != nil {
+		return JobFilter{}, err
+	}
+	return filter, nil
+}
+
+func normalizeExecutionFilter(filter ExecutionFilter) (ExecutionFilter, error) {
+	filter.Keyword = strings.TrimSpace(filter.Keyword)
+	if len(filter.Keyword) > 200 {
+		return ExecutionFilter{}, apperror.Invalid("keyword must not exceed 200 bytes", nil)
+	}
+	var err error
+	if filter.IDs, err = normalizeSet(filter.IDs, nil); err != nil {
+		return ExecutionFilter{}, err
+	}
+	if filter.Statuses, err = normalizeSet(filter.Statuses, map[string]struct{}{"running": {}, "succeeded": {}, "failed": {}}); err != nil {
+		return ExecutionFilter{}, apperror.Invalid("invalid execution status", err)
+	}
+	if filter.TriggerTypes, err = normalizeSet(filter.TriggerTypes, map[string]struct{}{"scheduled": {}, "manual": {}}); err != nil {
+		return ExecutionFilter{}, apperror.Invalid("invalid trigger type", err)
+	}
+	if err := validateRange(filter.StartedFrom, filter.StartedTo, "started"); err != nil {
+		return ExecutionFilter{}, err
+	}
+	if filter.DurationMinMilliseconds != nil && *filter.DurationMinMilliseconds < 0 || filter.DurationMaxMilliseconds != nil && *filter.DurationMaxMilliseconds < 0 {
+		return ExecutionFilter{}, apperror.Invalid("duration range must not be negative", nil)
+	}
+	if filter.DurationMinMilliseconds != nil && filter.DurationMaxMilliseconds != nil && *filter.DurationMinMilliseconds > *filter.DurationMaxMilliseconds {
+		return ExecutionFilter{}, apperror.Invalid("duration minimum must not exceed maximum", nil)
+	}
+	return filter, nil
+}
+
+func normalizeSet(values []string, allowed map[string]struct{}) ([]string, error) {
+	if len(values) > 100 {
+		return nil, apperror.Invalid("filter lists must not exceed 100 values", nil)
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || len(value) > 200 {
+			return nil, apperror.Invalid("filter values must be non-empty and at most 200 bytes", nil)
+		}
+		if allowed != nil {
+			value = strings.ToLower(value)
+			if _, ok := allowed[value]; !ok {
+				return nil, errors.New("unsupported filter value")
+			}
+		}
+		if _, ok := seen[value]; !ok {
+			seen[value] = struct{}{}
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func validateRange(from, to *time.Time, name string) error {
+	if from != nil && to != nil && !from.Before(*to) {
+		return apperror.Invalid(name+"_from must be before "+name+"_to", nil)
+	}
+	return nil
 }
 
 func normalizeAndValidate(ctx context.Context, invoker Invoker, input Input) (Input, error) {

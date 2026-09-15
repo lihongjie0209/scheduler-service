@@ -175,12 +175,34 @@ definitions:
     type: object
   httptransport.ListExecutionsRequest:
     properties:
+      duration_max_milliseconds:
+        type: integer
+      duration_min_milliseconds:
+        type: integer
+      ids:
+        items:
+          type: string
+        type: array
       job_id:
+        type: string
+      keyword:
         type: string
       page:
         type: integer
       page_size:
         type: integer
+      started_from:
+        type: string
+      started_to:
+        type: string
+      statuses:
+        items:
+          type: string
+        type: array
+      trigger_types:
+        items:
+          type: string
+        type: array
     required:
     - job_id
     type: object
@@ -188,14 +210,32 @@ definitions:
     properties:
       application_id:
         type: string
+      created_from:
+        type: string
+      created_to:
+        type: string
+      ids:
+        items:
+          type: string
+        type: array
+      keyword:
+        type: string
       page:
         type: integer
       page_size:
         type: integer
       status:
         type: string
+      statuses:
+        items:
+          type: string
+        type: array
       tenant_id:
         type: string
+      upstreams:
+        items:
+          type: string
+        type: array
     required:
     - application_id
     - tenant_id

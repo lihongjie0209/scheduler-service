@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
@@ -110,16 +111,30 @@ type TriggerJobRequest struct {
 	ExpectedVersion int64  `json:"expected_version" binding:"required,gt=0"`
 }
 type ListJobsRequest struct {
-	TenantID      string `json:"tenant_id" binding:"required"`
-	ApplicationID string `json:"application_id" binding:"required"`
-	Status        string `json:"status"`
-	Page          int    `json:"page"`
-	PageSize      int    `json:"page_size"`
+	TenantID      string     `json:"tenant_id" binding:"required"`
+	ApplicationID string     `json:"application_id" binding:"required"`
+	Status        string     `json:"status"`
+	Keyword       string     `json:"keyword"`
+	IDs           []string   `json:"ids"`
+	Statuses      []string   `json:"statuses"`
+	Upstreams     []string   `json:"upstreams"`
+	CreatedFrom   *time.Time `json:"created_from"`
+	CreatedTo     *time.Time `json:"created_to"`
+	Page          int        `json:"page"`
+	PageSize      int        `json:"page_size"`
 }
 type ListExecutionsRequest struct {
-	JobID    string `json:"job_id" binding:"required"`
-	Page     int    `json:"page"`
-	PageSize int    `json:"page_size"`
+	JobID                   string     `json:"job_id" binding:"required"`
+	Keyword                 string     `json:"keyword"`
+	IDs                     []string   `json:"ids"`
+	Statuses                []string   `json:"statuses"`
+	TriggerTypes            []string   `json:"trigger_types"`
+	StartedFrom             *time.Time `json:"started_from"`
+	StartedTo               *time.Time `json:"started_to"`
+	DurationMinMilliseconds *int64     `json:"duration_min_milliseconds"`
+	DurationMaxMilliseconds *int64     `json:"duration_max_milliseconds"`
+	Page                    int        `json:"page"`
+	PageSize                int        `json:"page_size"`
 }
 
 func input(request JobInput) job.Input {
@@ -234,7 +249,11 @@ func (h *Handler) ListJobs(c *gin.Context) {
 	if !h.bind(c, &request) {
 		return
 	}
-	value, err := h.jobs.List(c.Request.Context(), request.TenantID, request.ApplicationID, request.Status, request.Page, request.PageSize)
+	statuses := append([]string(nil), request.Statuses...)
+	if request.Status != "" {
+		statuses = append(statuses, request.Status)
+	}
+	value, err := h.jobs.List(c.Request.Context(), job.JobFilter{TenantID: request.TenantID, ApplicationID: request.ApplicationID, Keyword: request.Keyword, IDs: request.IDs, Statuses: statuses, Upstreams: request.Upstreams, CreatedFrom: request.CreatedFrom, CreatedTo: request.CreatedTo}, request.Page, request.PageSize)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return
@@ -300,7 +319,7 @@ func (h *Handler) ListExecutions(c *gin.Context) {
 	if !h.bind(c, &request) {
 		return
 	}
-	value, err := h.jobs.ListExecutions(c.Request.Context(), request.JobID, request.Page, request.PageSize)
+	value, err := h.jobs.ListExecutions(c.Request.Context(), job.ExecutionFilter{JobID: request.JobID, Keyword: request.Keyword, IDs: request.IDs, Statuses: request.Statuses, TriggerTypes: request.TriggerTypes, StartedFrom: request.StartedFrom, StartedTo: request.StartedTo, DurationMinMilliseconds: request.DurationMinMilliseconds, DurationMaxMilliseconds: request.DurationMaxMilliseconds}, request.Page, request.PageSize)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return

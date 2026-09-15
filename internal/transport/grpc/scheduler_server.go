@@ -3,6 +3,7 @@ package grpctransport
 import (
 	"context"
 	"errors"
+	"time"
 
 	schedulerv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/scheduler/v1"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
@@ -49,7 +50,19 @@ func (s *schedulerServer) GetJob(ctx context.Context, request *schedulerv1.GetJo
 	return &schedulerv1.GetJobResponse{Job: protoJob(value)}, nil
 }
 func (s *schedulerServer) ListJobs(ctx context.Context, request *schedulerv1.ListJobsRequest) (*schedulerv1.ListJobsResponse, error) {
-	page, err := s.jobs.List(ctx, request.GetTenantId(), request.GetApplicationId(), request.GetStatus(), int(request.GetPage()), int(request.GetPageSize()))
+	createdFrom, err := protoTime(request.GetCreatedFrom())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid created_from")
+	}
+	createdTo, err := protoTime(request.GetCreatedTo())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid created_to")
+	}
+	statuses := append([]string(nil), request.GetStatuses()...)
+	if request.GetStatus() != "" {
+		statuses = append(statuses, request.GetStatus())
+	}
+	page, err := s.jobs.List(ctx, job.JobFilter{TenantID: request.GetTenantId(), ApplicationID: request.GetApplicationId(), Keyword: request.GetKeyword(), IDs: request.GetIds(), Statuses: statuses, Upstreams: request.GetUpstreams(), CreatedFrom: createdFrom, CreatedTo: createdTo}, int(request.GetPage()), int(request.GetPageSize()))
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -74,7 +87,15 @@ func (s *schedulerServer) GetExecution(ctx context.Context, request *schedulerv1
 	return &schedulerv1.GetExecutionResponse{Execution: protoExecution(value)}, nil
 }
 func (s *schedulerServer) ListExecutions(ctx context.Context, request *schedulerv1.ListExecutionsRequest) (*schedulerv1.ListExecutionsResponse, error) {
-	page, err := s.jobs.ListExecutions(ctx, request.GetJobId(), int(request.GetPage()), int(request.GetPageSize()))
+	startedFrom, err := protoTime(request.GetStartedFrom())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid started_from")
+	}
+	startedTo, err := protoTime(request.GetStartedTo())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid started_to")
+	}
+	page, err := s.jobs.ListExecutions(ctx, job.ExecutionFilter{JobID: request.GetJobId(), Keyword: request.GetKeyword(), IDs: request.GetIds(), Statuses: request.GetStatuses(), TriggerTypes: request.GetTriggerTypes(), StartedFrom: startedFrom, StartedTo: startedTo, DurationMinMilliseconds: request.DurationMinMilliseconds, DurationMaxMilliseconds: request.DurationMaxMilliseconds}, int(request.GetPage()), int(request.GetPageSize()))
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -83,6 +104,17 @@ func (s *schedulerServer) ListExecutions(ctx context.Context, request *scheduler
 		items = append(items, protoExecution(value))
 	}
 	return &schedulerv1.ListExecutionsResponse{Items: items, Total: page.Total, Page: int32(page.Page), PageSize: int32(page.PageSize)}, nil
+}
+
+func protoTime(value *timestamppb.Timestamp) (*time.Time, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if err := value.CheckValid(); err != nil {
+		return nil, err
+	}
+	result := value.AsTime()
+	return &result, nil
 }
 
 func protoInput(tenantID, applicationID, name, expression, timezone, upstream, method, requestJSON string, timeout int64, enabled bool) job.Input {
