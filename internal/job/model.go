@@ -3,22 +3,24 @@ package job
 import "time"
 
 type Job struct {
-	ID                  string    `db:"id" json:"id"`
-	TenantID            string    `db:"tenant_id" json:"tenant_id"`
-	ApplicationID       string    `db:"application_id" json:"application_id"`
-	Name                string    `db:"name" json:"name"`
-	CronExpression      string    `db:"cron_expression" json:"cron_expression"`
-	Timezone            string    `db:"timezone" json:"timezone"`
-	Upstream            string    `db:"upstream" json:"upstream"`
-	FullMethod          string    `db:"full_method" json:"full_method"`
-	RequestJSON         string    `db:"request_json" json:"request_json"`
-	TimeoutMilliseconds int64     `db:"timeout_milliseconds" json:"timeout_milliseconds"`
-	Status              string    `db:"status" json:"status"`
-	Version             int64     `db:"version" json:"version"`
-	CreatedAt           time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
-	CreatedBy           string    `db:"created_by" json:"created_by"`
-	UpdatedBy           string    `db:"updated_by" json:"updated_by"`
+	ID                  string     `db:"id" json:"id"`
+	TenantID            string     `db:"tenant_id" json:"tenant_id"`
+	ApplicationID       string     `db:"application_id" json:"application_id"`
+	Name                string     `db:"name" json:"name"`
+	CronExpression      string     `db:"cron_expression" json:"cron_expression"`
+	Timezone            string     `db:"timezone" json:"timezone"`
+	Upstream            string     `db:"upstream" json:"upstream"`
+	FullMethod          string     `db:"full_method" json:"full_method"`
+	RequestJSON         string     `db:"request_json" json:"request_json"`
+	TimeoutMilliseconds int64      `db:"timeout_milliseconds" json:"timeout_milliseconds"`
+	Status              string     `db:"status" json:"status"`
+	Version             int64      `db:"version" json:"version"`
+	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
+	CreatedBy           string     `db:"created_by" json:"created_by"`
+	UpdatedBy           string     `db:"updated_by" json:"updated_by"`
+	DeletedAt           *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
+	DeletedBy           *string    `db:"deleted_by" json:"deleted_by,omitempty"`
 }
 
 type Execution struct {
@@ -39,6 +41,8 @@ type Execution struct {
 	UpdatedAt            time.Time  `db:"updated_at" json:"updated_at"`
 	CreatedBy            string     `db:"created_by" json:"created_by"`
 	UpdatedBy            string     `db:"updated_by" json:"updated_by"`
+	DeletedAt            *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
+	DeletedBy            *string    `db:"deleted_by" json:"deleted_by,omitempty"`
 }
 
 type Page[T any] struct {

@@ -2,7 +2,7 @@
 
 平台集中定时任务服务。它管理 Cron 任务并通过动态 gRPC 调用内部服务，不生成或编译任何下游业务 Client Stub。
 
-成功和失败的执行历史默认保留 90 天，由服务按 500 条有界批次删除；生产环境可以通过环境变量覆盖保留期，并在删除前用数据导出或 CDC 归档到对象存储/分析库。当前执行 ID 保持全局唯一，因此暂不直接按时间分区；达到实测容量阈值后，先演进为包含时间桶的身份约束，再使用 PostgreSQL 原生分区和可选 `pg_partman` 自动维护。
+成功和失败的执行历史默认在线保留 90 天，由服务按 500 条有界批次逻辑删除；生产环境可以通过环境变量覆盖保留期，并通过数据导出或 CDC 归档到对象存储/分析库。当前执行 ID 保持全局唯一，因此暂不直接按时间分区，也不绕过全局审计触发器物理删除；达到实测容量阈值后，先演进为包含时间桶的身份约束，再使用 PostgreSQL 原生分区和可选 `pg_partman` 回收物理存储。
 
 ## 为什么下游接口变更不要求调度服务发版
 
@@ -63,7 +63,7 @@ APP_ENV=local go run ./cmd/api
 - HTTP：`/api/v1/scheduler/jobs/{create,update,delete,get,list,trigger}` 与 `/api/v1/scheduler/executions/{get,list}`
 - gRPC：`platform.scheduler.v1.SchedulerService`
 
-更新与删除必须携带 `version`，Repository 使用乐观锁原子递增版本。任务和执行记录均包含平台统一审计字段。
+更新与删除必须携带 `version`，Repository 使用乐观锁原子递增版本。任务和执行记录均包含平台统一审计字段和逻辑删除字段；PostgreSQL/Kingbase 由事务级 actor context 与数据库触发器统一维护并禁止物理删除，MySQL 由 Repository 显式维护。
 
 ## 验证
 

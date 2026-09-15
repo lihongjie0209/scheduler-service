@@ -189,10 +189,10 @@ func TestExecuteScheduledRejectsStaleLoadedDefinition(t *testing.T) {
 	db := sqlx.NewDb(database, "sqlmock")
 	service := NewService(&SQLRepository{db: db}, nil, nil, nil)
 	loaded := Job{ID: "job-1", TenantID: "tenant-1", ApplicationID: "application-1", Status: "enabled", Version: 4}
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT ` + jobColumns + ` FROM scheduled_jobs WHERE id=? AND status<>'deleted'`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT ` + jobColumns + ` FROM scheduled_jobs WHERE id=? AND deleted_at IS NULL`)).
 		WithArgs(loaded.ID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "application_id", "name", "cron_expression", "timezone", "upstream", "full_method", "request_json", "timeout_milliseconds", "status", "version", "created_at", "updated_at", "created_by", "updated_by"}).
-			AddRow(loaded.ID, loaded.TenantID, loaded.ApplicationID, "updated", "0 0 2 * * *", "Asia/Shanghai", "reporting", "/platform.reporting.v1.Reporting/Generate", `{}`, 5000, loaded.Status, loaded.Version, service.now(), service.now(), "user-1", "user-1"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "application_id", "name", "cron_expression", "timezone", "upstream", "full_method", "request_json", "timeout_milliseconds", "status", "version", "created_at", "updated_at", "created_by", "updated_by", "deleted_at", "deleted_by"}).
+			AddRow(loaded.ID, loaded.TenantID, loaded.ApplicationID, "updated", "0 0 2 * * *", "Asia/Shanghai", "reporting", "/platform.reporting.v1.Reporting/Generate", `{}`, 5000, loaded.Status, loaded.Version, service.now(), service.now(), "user-1", "user-1", nil, nil))
 
 	_, err = service.ExecuteScheduled(t.Context(), Job{ID: loaded.ID, Version: 3})
 	var appErr *apperror.Error

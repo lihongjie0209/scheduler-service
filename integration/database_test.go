@@ -4,12 +4,15 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
 	appdb "github.com/lihongjie0209/scheduler-service/internal/database"
 	"github.com/lihongjie0209/scheduler-service/internal/job"
@@ -57,42 +60,64 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = db.Close() })
 			repository := job.NewRepository(db)
+			transactor := appdb.NewTransactor(db)
+			auditCtx := principal.WithContext(ctx, principal.Principal{ID: "integration", Type: principal.TypeSystem})
 			now := time.Now().Truncate(time.Microsecond)
 			created := job.Job{ID: "job-" + databaseType, TenantID: "tenant-1", ApplicationID: "application-1", Name: "health", CronExpression: "0 0 0 * * *", Timezone: "Asia/Shanghai", Upstream: "health", FullMethod: "/grpc.health.v1.Health/Check", RequestJSON: `{}`, TimeoutMilliseconds: 5000, Status: "enabled", Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "integration", UpdatedBy: "integration"}
-			tx, err := db.BeginTxx(ctx, nil)
-			if err != nil {
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.CreateJob(auditCtx, tx, created) }); err != nil {
 				t.Fatal(err)
 			}
-			if err := repository.CreateJob(ctx, tx, created); err != nil {
-				_ = tx.Rollback()
-				t.Fatal(err)
-			}
-			if err := tx.Commit(); err != nil {
-				t.Fatal(err)
-			}
-			loaded, err := repository.GetJob(ctx, created.ID)
+			loaded, err := repository.GetJob(auditCtx, created.ID)
 			if err != nil || loaded.CreatedBy != "integration" || loaded.Version != 1 {
 				t.Fatalf("GetJob()=%+v,%v", loaded, err)
 			}
 			loaded.Name, loaded.UpdatedAt = "health-updated", now.Add(time.Second)
-			if err := repository.UpdateJob(ctx, db, loaded, 1); err != nil {
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.UpdateJob(auditCtx, tx, loaded, 1) }); err != nil {
 				t.Fatal(err)
 			}
-			if err := repository.UpdateJob(ctx, db, loaded, 1); err != job.ErrStaleVersion {
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.UpdateJob(auditCtx, tx, loaded, 1) }); err != job.ErrStaleVersion {
 				t.Fatalf("stale update error=%v", err)
 			}
 			execution := job.Execution{ID: "execution-" + databaseType, JobID: created.ID, TenantID: created.TenantID, ApplicationID: created.ApplicationID, TriggerType: "manual", Status: "running", StartedAt: now, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "integration", UpdatedBy: "integration"}
-			if err := repository.CreateExecution(ctx, db, execution); err != nil {
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.CreateExecution(auditCtx, tx, execution) }); err != nil {
 				t.Fatal(err)
 			}
 			finished := now.Add(time.Second)
 			execution.Status, execution.FinishedAt, execution.UpdatedAt = "succeeded", &finished, finished
-			if err := repository.FinishExecution(ctx, db, execution); err != nil {
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error { return repository.FinishExecution(auditCtx, tx, execution) }); err != nil {
 				t.Fatal(err)
 			}
 			loadedExecution, err := repository.GetExecution(ctx, execution.ID)
 			if err != nil || loadedExecution.Status != "succeeded" {
 				t.Fatalf("GetExecution()=%+v,%v", loadedExecution, err)
+			}
+			cleanupAt := finished.Add(time.Hour)
+			var cleaned int64
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error {
+				var cleanupErr error
+				cleaned, cleanupErr = repository.SoftDeleteTerminalExecutionsBefore(auditCtx, tx, cleanupAt, 10, job.AuditFields{UpdatedAt: cleanupAt, UpdatedBy: "integration"})
+				return cleanupErr
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if cleaned != 1 {
+				t.Fatalf("soft-deleted executions=%d, want 1", cleaned)
+			}
+			if _, err := repository.GetExecution(auditCtx, execution.ID); !errors.Is(err, job.ErrExecutionNotFound) {
+				t.Fatalf("GetExecution() after retention error=%v, want not found", err)
+			}
+			if databaseType == "postgres" {
+				if _, err := db.ExecContext(auditCtx, `DELETE FROM job_executions WHERE id=$1`, execution.ID); err == nil {
+					t.Fatal("physical delete of audited execution unexpectedly succeeded")
+				}
+			}
+			if err := transactor.Within(auditCtx, nil, func(tx *sqlx.Tx) error {
+				return repository.DeleteJob(auditCtx, tx, created.ID, 2, job.AuditFields{UpdatedAt: cleanupAt, UpdatedBy: "integration"})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repository.GetJob(auditCtx, created.ID); !errors.Is(err, job.ErrNotFound) {
+				t.Fatalf("GetJob() after delete error=%v, want not found", err)
 			}
 			var userTables int
 			if databaseType == "postgres" {

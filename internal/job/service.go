@@ -119,7 +119,7 @@ func (s *Service) Delete(ctx context.Context, id string, expected int64) error {
 		return err
 	}
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
-		return s.repository.DeleteJob(ctx, tx, strings.TrimSpace(id), expected, timeFields{UpdatedAt: s.now(), UpdatedBy: actor})
+		return s.repository.DeleteJob(ctx, tx, strings.TrimSpace(id), expected, AuditFields{UpdatedAt: s.now(), UpdatedBy: actor})
 	})
 	if err == nil {
 		s.signalChanged()
@@ -182,6 +182,7 @@ func validateManualTrigger(value Job, expected int64) error {
 	return nil
 }
 func (s *Service) ExecuteScheduled(ctx context.Context, value Job) (Execution, error) {
+	ctx = principal.WithContext(ctx, principal.Principal{ID: "scheduler-service", Type: principal.TypeSystem, TenantID: value.TenantID})
 	current, err := s.repository.GetJob(ctx, value.ID)
 	if err != nil {
 		return Execution{}, translate(err)

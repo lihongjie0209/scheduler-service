@@ -2,17 +2,22 @@ package job
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
+	"github.com/lihongjie0209/scheduler-service/internal/database"
 	"go.uber.org/fx"
 )
 
 type ExecutionCleaner struct {
 	repository Repository
+	transactor *database.Transactor
 	logger     *slog.Logger
 	retention  time.Duration
 	interval   time.Duration
@@ -23,8 +28,8 @@ type ExecutionCleaner struct {
 	wg         sync.WaitGroup
 }
 
-func NewExecutionCleaner(lifecycle fx.Lifecycle, repository Repository, logger *slog.Logger, cfg config.Config) (*ExecutionCleaner, error) {
-	if repository == nil || logger == nil {
+func NewExecutionCleaner(lifecycle fx.Lifecycle, repository Repository, transactor *database.Transactor, logger *slog.Logger, cfg config.Config) (*ExecutionCleaner, error) {
+	if repository == nil || transactor == nil || logger == nil {
 		return nil, errors.New("scheduler execution cleaner dependencies are required")
 	}
 	if cfg.Cron.ExecutionRetention <= 0 {
@@ -38,6 +43,7 @@ func NewExecutionCleaner(lifecycle fx.Lifecycle, repository Repository, logger *
 	}
 	cleaner := &ExecutionCleaner{
 		repository: repository,
+		transactor: transactor,
 		logger:     logger,
 		retention:  cfg.Cron.ExecutionRetention,
 		interval:   cfg.Cron.ExecutionCleanupInterval,
@@ -51,7 +57,14 @@ func NewExecutionCleaner(lifecycle fx.Lifecycle, repository Repository, logger *
 
 func (c *ExecutionCleaner) clean(ctx context.Context) error {
 	for {
-		deleted, err := c.repository.DeleteTerminalExecutionsBefore(ctx, c.now().Add(-c.retention), c.batchSize)
+		now := c.now()
+		auditCtx := principal.WithContext(ctx, principal.Principal{ID: "scheduler-service", Type: principal.TypeSystem})
+		var deleted int64
+		err := c.transactor.Within(auditCtx, &sql.TxOptions{}, func(tx *sqlx.Tx) error {
+			var deleteErr error
+			deleted, deleteErr = c.repository.SoftDeleteTerminalExecutionsBefore(auditCtx, tx, now.Add(-c.retention), c.batchSize, AuditFields{UpdatedAt: now, UpdatedBy: "scheduler-service"})
+			return deleteErr
+		})
 		if err != nil {
 			return err
 		}
