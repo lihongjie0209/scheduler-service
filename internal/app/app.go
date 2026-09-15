@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lihongjie0209/microservice-platform-go/operationlog"
 	"github.com/lihongjie0209/scheduler-service/internal/authorization"
 	"github.com/lihongjie0209/scheduler-service/internal/cache"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
@@ -36,6 +37,7 @@ func New(cfg config.Config) *fx.App {
 		DatabaseModule,
 		CacheModule,
 		eventbus.Module,
+		fx.Provide(newOperationRecorder),
 		fx.Provide(idempotency.New),
 		fx.Provide(observability.NewMetrics),
 		outbound.Module,
@@ -47,6 +49,10 @@ func New(cfg config.Config) *fx.App {
 		fx.StartTimeout(cfg.App.ShutdownTimeout),
 		fx.StopTimeout(cfg.App.ShutdownTimeout),
 	)
+}
+
+func newOperationRecorder(cfg config.Config, bus *eventbus.Bus) (operationlog.Recorder, error) {
+	return operationlog.New(operationlog.Config{Enabled: cfg.OperationLog.Enabled, Subject: cfg.OperationLog.Subject, MaxPayloadBytes: cfg.OperationLog.MaxPayloadBytes}, bus)
 }
 
 func runStartupMigration(cfg config.Config, logger *slog.Logger) error {

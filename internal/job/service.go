@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lihongjie0209/microservice-platform-go/appaccess"
 	"github.com/lihongjie0209/microservice-platform-go/distlock"
+	"github.com/lihongjie0209/microservice-platform-go/operationlog"
 	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
 	"github.com/lihongjie0209/scheduler-service/internal/cache"
@@ -29,6 +30,7 @@ type Service struct {
 	now          func() time.Time
 	changed      chan struct{}
 	applications appaccess.Verifier
+	operations   operationlog.Recorder
 }
 
 type allowAllApplications struct{}
@@ -38,12 +40,13 @@ func (allowAllApplications) Verify(context.Context, string, string) error { retu
 func NewService(repository Repository, transactor *database.Transactor, invoker Invoker, locker *cache.Locker) *Service {
 	return &Service{repository: repository, transactor: transactor, invoker: invoker, locker: locker, applications: allowAllApplications{}, now: time.Now, changed: make(chan struct{}, 1)}
 }
-func NewRuntimeService(repository Repository, transactor *database.Transactor, invoker Invoker, locker *cache.Locker, applications appaccess.Verifier) (*Service, error) {
-	if applications == nil {
-		return nil, errors.New("application verifier is required")
+func NewRuntimeService(repository Repository, transactor *database.Transactor, invoker Invoker, locker *cache.Locker, applications appaccess.Verifier, operations operationlog.Recorder) (*Service, error) {
+	if applications == nil || operations == nil {
+		return nil, errors.New("application verifier and operation recorder are required")
 	}
 	service := NewService(repository, transactor, invoker, locker)
 	service.applications = applications
+	service.operations = operations
 	return service, nil
 }
 func (s *Service) Changes() <-chan struct{} { return s.changed }
@@ -54,7 +57,11 @@ func (s *Service) signalChanged() {
 	}
 }
 
-func (s *Service) Create(ctx context.Context, input Input) (Job, error) {
+func (s *Service) Create(ctx context.Context, input Input) (result Job, err error) {
+	started := s.now()
+	defer func() {
+		err = s.finishOperation(ctx, started, operationlog.Entry{Operation: "scheduler.job.create", ResourceType: "scheduled_job", ResourceID: result.ID, ApplicationID: input.ApplicationID, Source: "backend", Protocol: "service", Request: map[string]any{"name": input.Name, "upstream": input.Upstream, "full_method": input.FullMethod, "enabled": input.Enabled}}, err)
+	}()
 	actor, err := actorFromContext(ctx)
 	if err != nil {
 		return Job{}, err
@@ -75,7 +82,11 @@ func (s *Service) Create(ctx context.Context, input Input) (Job, error) {
 	s.signalChanged()
 	return value, nil
 }
-func (s *Service) Update(ctx context.Context, id string, input Input, expected int64) (Job, error) {
+func (s *Service) Update(ctx context.Context, id string, input Input, expected int64) (result Job, err error) {
+	started := s.now()
+	defer func() {
+		err = s.finishOperation(ctx, started, operationlog.Entry{Operation: "scheduler.job.update", ResourceType: "scheduled_job", ResourceID: strings.TrimSpace(id), ApplicationID: input.ApplicationID, Source: "backend", Protocol: "service", Request: map[string]any{"name": input.Name, "upstream": input.Upstream, "full_method": input.FullMethod, "enabled": input.Enabled, "expected_version": expected}}, err)
+	}()
 	if expected < 1 {
 		return Job{}, apperror.Invalid("version must be positive", nil)
 	}
@@ -104,7 +115,12 @@ func (s *Service) Update(ctx context.Context, id string, input Input, expected i
 	s.signalChanged()
 	return current, nil
 }
-func (s *Service) Delete(ctx context.Context, id string, expected int64) error {
+func (s *Service) Delete(ctx context.Context, id string, expected int64) (err error) {
+	started := s.now()
+	applicationID := ""
+	defer func() {
+		err = s.finishOperation(ctx, started, operationlog.Entry{Operation: "scheduler.job.delete", ResourceType: "scheduled_job", ResourceID: strings.TrimSpace(id), ApplicationID: applicationID, Source: "backend", Protocol: "service", Request: map[string]any{"expected_version": expected}}, err)
+	}()
 	if expected < 1 {
 		return apperror.Invalid("version must be positive", nil)
 	}
@@ -116,6 +132,7 @@ func (s *Service) Delete(ctx context.Context, id string, expected int64) error {
 	if err != nil {
 		return translate(err)
 	}
+	applicationID = current.ApplicationID
 	if err := s.authorizeScope(ctx, current.TenantID, current.ApplicationID); err != nil {
 		return err
 	}
@@ -153,7 +170,12 @@ func (s *Service) List(ctx context.Context, filter JobFilter, page, pageSize int
 	values, total, err := s.repository.ListJobs(ctx, filter, pageSize, (page-1)*pageSize)
 	return Page[Job]{Items: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
 }
-func (s *Service) Trigger(ctx context.Context, id string, expected int64) (Execution, error) {
+func (s *Service) Trigger(ctx context.Context, id string, expected int64) (result Execution, err error) {
+	started := s.now()
+	applicationID := ""
+	defer func() {
+		err = s.finishOperation(ctx, started, operationlog.Entry{Operation: "scheduler.job.trigger", ResourceType: "scheduled_job", ResourceID: strings.TrimSpace(id), ApplicationID: applicationID, Source: "backend", Protocol: "service", Request: map[string]any{"expected_version": expected}}, err)
+	}()
 	if expected < 1 {
 		return Execution{}, apperror.Invalid("version must be positive", nil)
 	}
@@ -165,6 +187,7 @@ func (s *Service) Trigger(ctx context.Context, id string, expected int64) (Execu
 	if err != nil {
 		return Execution{}, translate(err)
 	}
+	applicationID = value.ApplicationID
 	if err := s.authorizeScope(ctx, value.TenantID, value.ApplicationID); err != nil {
 		return Execution{}, err
 	}
@@ -172,6 +195,28 @@ func (s *Service) Trigger(ctx context.Context, id string, expected int64) (Execu
 		return Execution{}, err
 	}
 	return s.execute(ctx, value, "manual", actor, expected)
+}
+
+func (s *Service) finishOperation(ctx context.Context, started time.Time, entry operationlog.Entry, businessErr error) error {
+	if s.operations == nil || !s.operations.Enabled() {
+		return businessErr
+	}
+	entry.Duration = s.now().Sub(started)
+	entry.Succeeded = businessErr == nil
+	if businessErr != nil {
+		entry.ErrorMessage = truncate(businessErr.Error(), 2000)
+	}
+	if id, ok := requestid.FromContext(ctx); ok {
+		entry.RequestID = id
+	}
+	logErr := s.operations.Record(ctx, entry)
+	if businessErr != nil {
+		return businessErr
+	}
+	if logErr != nil {
+		return apperror.Unavailable("enqueue operation log", logErr)
+	}
+	return nil
 }
 
 func validateManualTrigger(value Job, expected int64) error {
@@ -327,7 +372,8 @@ func normalizeExecutionFilter(filter ExecutionFilter) (ExecutionFilter, error) {
 	if err := validateRange(filter.StartedFrom, filter.StartedTo, "started"); err != nil {
 		return ExecutionFilter{}, err
 	}
-	if filter.DurationMinMilliseconds != nil && *filter.DurationMinMilliseconds < 0 || filter.DurationMaxMilliseconds != nil && *filter.DurationMaxMilliseconds < 0 {
+	if (filter.DurationMinMilliseconds != nil && *filter.DurationMinMilliseconds < 0) ||
+		(filter.DurationMaxMilliseconds != nil && *filter.DurationMaxMilliseconds < 0) {
 		return ExecutionFilter{}, apperror.Invalid("duration range must not be negative", nil)
 	}
 	if filter.DurationMinMilliseconds != nil && filter.DurationMaxMilliseconds != nil && *filter.DurationMinMilliseconds > *filter.DurationMaxMilliseconds {

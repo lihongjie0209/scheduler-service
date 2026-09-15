@@ -189,4 +189,27 @@ func TestLoad_UsesCanonicalPlatformEventStream(t *testing.T) {
 	if cfg.EventBus.StreamName != "PLATFORM_EVENTS" || len(cfg.EventBus.Subjects) != 1 || cfg.EventBus.Subjects[0] != "platform.>" {
 		t.Fatalf("unexpected event stream defaults: %q %#v", cfg.EventBus.StreamName, cfg.EventBus.Subjects)
 	}
+	if cfg.OperationLog.Enabled || cfg.OperationLog.Subject != "platform.operation-log.recorded.v1" || cfg.OperationLog.MaxPayloadBytes != 16384 {
+		t.Fatalf("unexpected operation log defaults: %+v", cfg.OperationLog)
+	}
+}
+
+func TestConfig_ValidateOperationLogDependency(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		HTTP:         HTTP{Address: "127.0.0.1:8080", RequestTimeout: time.Second},
+		Database:     Database{Name: "platform"},
+		Health:       Health{DatabaseTimeout: time.Second, RedisTimeout: time.Second},
+		User:         User{CacheTTL: time.Second, LockTTL: time.Second, LockRetryDelay: time.Millisecond},
+		Cron:         Cron{ExecutionRetention: time.Hour, ExecutionCleanupInterval: time.Minute, ExecutionCleanupBatchSize: 1},
+		OperationLog: OperationLog{Enabled: true, Subject: "platform.operation-log.recorded.v1", MaxPayloadBytes: 16384},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "operation_log requires event_bus") {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	cfg.EventBus = EventBus{Enabled: true, URLs: []string{"nats://127.0.0.1:4222"}, StreamName: "PLATFORM_EVENTS", Subjects: []string{"platform.>"}, Storage: "memory", MaxAge: time.Hour, DuplicateWindow: time.Minute, ConnectTimeout: time.Second, ReconnectWait: time.Second, PublishTimeout: time.Second, ConsumerAckWait: time.Second, ConsumerMaxDeliver: 1}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
 }

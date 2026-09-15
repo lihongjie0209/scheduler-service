@@ -10,8 +10,10 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 	"github.com/lihongjie0209/microservice-platform-go/appaccess"
+	"github.com/lihongjie0209/microservice-platform-go/operationlog"
 	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
+	"github.com/lihongjie0209/scheduler-service/internal/requestid"
 )
 
 type fakeInvoker struct{ err error }
@@ -19,6 +21,17 @@ type fakeInvoker struct{ err error }
 type fakeApplicationVerifier struct{ err error }
 
 func (f fakeApplicationVerifier) Verify(context.Context, string, string) error { return f.err }
+
+type operationRecorderStub struct {
+	entry operationlog.Entry
+	err   error
+}
+
+func (*operationRecorderStub) Enabled() bool { return true }
+func (r *operationRecorderStub) Record(_ context.Context, entry operationlog.Entry) error {
+	r.entry = entry
+	return r.err
+}
 
 type trackingInvoker struct{ validateCalls int }
 
@@ -125,6 +138,55 @@ func TestTriggerRejectsMissingExpectedVersionBeforeDependencies(t *testing.T) {
 	var appErr *apperror.Error
 	if !errors.As(err, &appErr) || appErr.Code != apperror.CodeInvalidArgument {
 		t.Fatalf("Trigger() error = %v, want invalid argument", err)
+	}
+}
+
+func TestFinishOperationRecordsOutcomeAndRequestID(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	recorder := &operationRecorderStub{}
+	service := NewService(nil, nil, nil, nil)
+	service.operations = recorder
+	service.now = func() time.Time { return now }
+	ctx := requestid.WithContext(t.Context(), "request-1")
+
+	if err := service.finishOperation(ctx, now.Add(-25*time.Millisecond), operationlog.Entry{Operation: "scheduler.job.create"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !recorder.entry.Succeeded || recorder.entry.Duration != 25*time.Millisecond || recorder.entry.RequestID != "request-1" {
+		t.Fatalf("recorded entry = %+v", recorder.entry)
+	}
+}
+
+func TestFinishOperationPreservesBusinessFailure(t *testing.T) {
+	t.Parallel()
+
+	businessErr := apperror.Invalid("invalid job", nil)
+	recorder := &operationRecorderStub{err: errors.New("event bus unavailable")}
+	service := NewService(nil, nil, nil, nil)
+	service.operations = recorder
+
+	got := service.finishOperation(t.Context(), time.Now(), operationlog.Entry{Operation: "scheduler.job.update"}, businessErr)
+	if !errors.Is(got, businessErr) {
+		t.Fatalf("finishOperation() error = %v, want business error", got)
+	}
+	if recorder.entry.Succeeded || recorder.entry.ErrorMessage != businessErr.Error() {
+		t.Fatalf("recorded entry = %+v", recorder.entry)
+	}
+}
+
+func TestFinishOperationFailsClosedAfterSuccessfulMutation(t *testing.T) {
+	t.Parallel()
+
+	recorder := &operationRecorderStub{err: errors.New("event bus unavailable")}
+	service := NewService(nil, nil, nil, nil)
+	service.operations = recorder
+
+	err := service.finishOperation(t.Context(), time.Now(), operationlog.Entry{Operation: "scheduler.job.delete"}, nil)
+	var appErr *apperror.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperror.CodeDependencyUnavailable {
+		t.Fatalf("finishOperation() error = %v, want dependency unavailable", err)
 	}
 }
 
