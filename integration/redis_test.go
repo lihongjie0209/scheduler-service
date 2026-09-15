@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lihongjie0209/microservice-platform-go/distlock"
 	"github.com/lihongjie0209/scheduler-service/internal/cache"
 	"github.com/lihongjie0209/scheduler-service/internal/config"
 	"github.com/lihongjie0209/scheduler-service/internal/idempotency"
@@ -44,6 +45,30 @@ func TestRedisLockAndIdempotency(t *testing.T) {
 		t.Fatalf("competing lock acquired=%v err=%v", secondAcquired, err)
 	}
 	if err := lock.Unlock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	renewalStarted := make(chan struct{})
+	renewalDone := make(chan error, 1)
+	go func() {
+		_, renewalErr := distlock.TryWithLock(ctx, locker, "renewal", 300*time.Millisecond, func(leaseCtx context.Context) error {
+			close(renewalStarted)
+			timer := time.NewTimer(700 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-leaseCtx.Done():
+				return context.Cause(leaseCtx)
+			case <-timer.C:
+				return nil
+			}
+		})
+		renewalDone <- renewalErr
+	}()
+	<-renewalStarted
+	time.Sleep(500 * time.Millisecond)
+	if _, acquired, err := locker.TryLock(ctx, "renewal", time.Second); err != nil || acquired {
+		t.Fatalf("renewed lock contention acquired=%v err=%v", acquired, err)
+	}
+	if err := <-renewalDone; err != nil {
 		t.Fatal(err)
 	}
 

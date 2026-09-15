@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lihongjie0209/microservice-platform-go/appaccess"
+	"github.com/lihongjie0209/microservice-platform-go/distlock"
 	"github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/lihongjie0209/scheduler-service/internal/apperror"
 	"github.com/lihongjie0209/scheduler-service/internal/cache"
@@ -202,18 +203,22 @@ func (s *Service) execute(parent context.Context, value Job, triggerType, actor 
 	timeout := time.Duration(value.TimeoutMilliseconds) * time.Millisecond
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	lock, acquired, err := s.locker.TryLock(ctx, "scheduler:job:"+value.ID, timeout+30*time.Second)
-	if err != nil {
+	var execution Execution
+	acquired, err := distlock.TryWithLock(ctx, s.locker, "scheduler:job:"+value.ID, timeout+30*time.Second, func(leaseCtx context.Context) error {
+		var executeErr error
+		execution, executeErr = s.executeWithLease(leaseCtx, value, triggerType, actor, expectedVersion)
+		return executeErr
+	})
+	if err != nil && !acquired {
 		return Execution{}, apperror.Unavailable("acquire scheduled job lock", err)
 	}
 	if !acquired {
 		return Execution{}, apperror.Conflict("scheduled job is already running", nil)
 	}
-	defer func() {
-		unlockCtx, unlockCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer unlockCancel()
-		_ = lock.Unlock(unlockCtx)
-	}()
+	return execution, translate(err)
+}
+
+func (s *Service) executeWithLease(ctx context.Context, value Job, triggerType, actor string, expectedVersion int64) (Execution, error) {
 	started := s.now()
 	execution := Execution{ID: uuid.NewString(), JobID: value.ID, TenantID: value.TenantID, ApplicationID: value.ApplicationID, TriggerType: triggerType, Status: "running", StartedAt: started, Version: 1, CreatedAt: started, UpdatedAt: started, CreatedBy: actor, UpdatedBy: actor}
 	if err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
@@ -239,7 +244,7 @@ func (s *Service) execute(parent context.Context, value Job, triggerType, actor 
 	} else {
 		execution.Status, execution.ResponseJSON = "succeeded", truncate(response, 1<<20)
 	}
-	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
+	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer finishCancel()
 	finishErr := s.transactor.Within(finishCtx, nil, func(tx *sqlx.Tx) error { return s.repository.FinishExecution(finishCtx, tx, execution) })
 	if finishErr != nil {
